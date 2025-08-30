@@ -22,6 +22,7 @@ public class Sistema {
 
         so.utils.loadAndExec(progs.retrieveProgram("fatorialV2"));
 
+
         // so.utils.loadAndExec(progs.retrieveProgram("fatorial"));
         // fibonacci10,
         // fibonacci10v2,
