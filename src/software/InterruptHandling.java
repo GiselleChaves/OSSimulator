@@ -1,13 +1,13 @@
 package software;
 
-import hardware.HW;
+import hardware.Hw;
 import hardware.Interrupts;
 
 // ------- I N T E R R U P C O E S - rotinas de tratamento ------
 public class InterruptHandling {
-    private HW hw; // referencia ao hw se tiver que setar algo
+    private Hw hw; // referencia ao hw se tiver que setar algo
 
-    public InterruptHandling(HW _hw) {
+    public InterruptHandling(Hw _hw) {
         hw = _hw;
     }
 
