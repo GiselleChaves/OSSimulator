@@ -3,6 +3,27 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 
+# Arquivos compilados Java
+*.class
+
+# Diretórios de build
+bin/
+build/
+out/
+target/
+
+# Arquivos de IDE
+*.iml
+.idea/
+.vscode/
+.eclipse/
+
+# Arquivos temporários
+*.tmp
+*.temp
+*.log
+
+
 ### Eclipse ###
 .apt_generated
 .classpath

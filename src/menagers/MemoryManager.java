@@ -17,21 +17,25 @@ public class MemoryManager {
     * Allocate frames
     */
     public int[] allocate(int wordSize) {
-        int pgNumber = wordSize / getPgSize();
+        int pgNumber = (int) Math.ceil((double) wordSize / getPgSize());
         int[] pgTable = new int[pgNumber];
         int count = 0;
 
-        for(int i = 0; i < frameQuantity && i < pgNumber; i++) {
+        // Buscar frames livres
+        for(int i = 0; i < frameQuantity && count < pgNumber; i++) {
             if(!frames[i]) {
                 frames[i] = true;
                 pgTable[count++] = i;
             }
         }
+        
+        // Se não conseguiu alocar todos os frames necessários
         if(count < pgNumber) {
+            // Desfazer alocações parciais
             for(int i = 0; i < count; i++) {
                 frames[pgTable[i]] = false;
-                return null;
             }
+            return null;
         }
         return pgTable;
     }
