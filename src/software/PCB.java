@@ -1,6 +1,13 @@
 package software;
 
 public class PCB {
+    public PCB(int pid, int inicio, int fim, String programName) {
+        this.pid = pid;
+        this.inicio = inicio;
+        this.fim = fim;
+        this.programName = programName;
+    }
+
     public enum ProcState {
         NEW, READY, RUNNING, BLOCKED, TERMINATED
     }
@@ -18,6 +25,10 @@ public class PCB {
     public int[] pageTable;
     public int numPages;
     public int tamanhoEmPalavras;
+
+    public int inicio;
+    public int fim;
+    public String programName;
     
     // Estado do processo
     public ProcState state;

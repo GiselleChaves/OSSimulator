@@ -1,16 +1,24 @@
 package menagers;
 
+import hardware.Opcode;
+import hardware.Word;
+
 public class MemoryManager {
     private int memSize;        // tamanho total da memória em palavras
     private int pgSize;         // tamanho da página / frame em palavras
     private int frameQuantity;     // número total de frames = memSize / pgSize
     private boolean[] frames;  // vetor que indica se o frame i está ocupado (true) ou livre (false)
+    private Word[] pos;
 
     public MemoryManager(int memSize, int pgSize) {
         this.memSize = memSize;
         this.pgSize = pgSize;
         this.frameQuantity = memSize / pgSize;
-        this.frames = new boolean[frameQuantity];  // inicializa todos como false (livres)
+        this.frames = new boolean[frameQuantity];
+        pos = new Word[memSize];
+        for (int i = 0; i < memSize; i++) {
+            pos[i] = new Word(Opcode.DATA, 0, 0, 0);
+        }
     }
 
     /*
@@ -67,6 +75,21 @@ public class MemoryManager {
                 System.out.println("0");
             }
         }
+    }
+
+    /**
+     * Escreve uma palavra na memória no endereço especificado
+     * @param endereco posição na memória
+     * @param valor palavra a ser escrita
+     * @return true se a operação foi bem-sucedida, false caso endereço inválido
+     */
+    public boolean write(int endereco, int valor) {
+        if (endereco < 0 || endereco >= pos.length) {
+            System.out.println("Erro: endereço inválido na memória: " + endereco);
+            return false;
+        }
+        pos[endereco] = valor;
+        return true;
     }
 
     public int getMemSize() {
