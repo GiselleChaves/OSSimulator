@@ -1,6 +1,6 @@
 package software;
 
-import hardware.HW;
+import hardware.Hw;
 import util.Utilities;
 
 public class SO {
@@ -8,7 +8,7 @@ public class SO {
     public SysCallHandling sc;
     public Utilities utils;
 
-    public SO(HW hw) {
+    public SO(Hw hw) {
         ih = new InterruptHandling(hw); // rotinas de tratamento de int
         sc = new SysCallHandling(hw); // chamadas de sistema
         hw.cpu.setAddressOfHandlers(ih, sc);

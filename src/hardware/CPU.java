@@ -49,19 +49,7 @@ public class CPU {
         u = _u;                     // aponta para rotinas utilitárias - fazer dump da memória na tela
     }
 
-
-    // verificação de enderecamento
-    private boolean legal(int e) { // todo acesso a memoria tem que ser verificado se é válido -
-        // aqui no caso se o endereco é um endereco valido em toda memoria
-        if (e >= 0 && e < m.length) {
-            return true;
-        } else {
-            irpt = Interrupts.intEnderecoInvalido;    // se nao for liga interrupcao no meio da exec da instrucao
-            return false;
-        }
-    }
-
-    private boolean testOverflow(int v) {             // toda operacao matematica deve avaliar se ocorre overflow
+    private boolean verifyOverflow(int v) {             // toda operacao matematica deve avaliar se ocorre overflow
         if ((v < minInt) || (v > maxInt)) {
             irpt = Interrupts.intOverflow;            // se houver liga interrupcao no meio da exec da instrucao
             return false;
@@ -69,6 +57,32 @@ public class CPU {
         ;
         return true;
     }
+
+    private boolean isValidAddress(int addr) {
+        if (addr < 0 || addr >= m.length) {
+            irpt = Interrupts.intEnderecoInvalido;
+            cpuStop = true;
+            return false;
+        }
+        return true;
+    }
+
+
+    public boolean isValidInstruction(Opcode opc) {
+        if (opc == null) return false;
+        switch(opc) {
+            case JMP: case JMPI: case JMPIG: case JMPIL: case JMPIE:
+            case JMPIM: case JMPIGM: case JMPILM: case JMPIEM:
+            case JMPIGK: case JMPILK: case JMPIEK: case JMPIGT:
+            case ADDI: case SUBI: case ADD: case SUB: case MULT:
+            case LDI: case LDD: case STD: case LDX: case STX: case MOVE:
+            case SYSCALL: case STOP:
+                return true;
+            default:
+                return false;
+        }
+    }
+
 
     public void setContext(int _pc) {                 // usado para setar o contexto da cpu para rodar um processo
         // [ nesta versao é somente colocar o PC na posicao 0 ]
@@ -83,7 +97,7 @@ public class CPU {
 
             // --------------------------------------------------------------------------------------------------
             // FASE DE FETCH
-            if (legal(pc)) { // pc valido
+            if (isValidAddress(pc)) { // pc valido
                 ir = m[pc];  // <<<<<<<<<<<< AQUI faz FETCH - busca posicao da memoria apontada por pc, guarda em ir
                 // resto é dump de debug
                 if (debug) {
@@ -101,6 +115,13 @@ public class CPU {
 
                 // --------------------------------------------------------------------------------------------------
                 // FASE DE EXECUCAO DA INSTRUCAO CARREGADA NO ir
+
+                if (!isValidInstruction(ir.opc)) {
+                    irpt = Interrupts.intInstrucaoInvalida;
+                    cpuStop = true;
+                    continue;
+                }
+
                 switch (ir.opc) {       // conforme o opcode (código de operação) executa
 
                     // Instrucoes de Busca e Armazenamento em Memoria
@@ -109,19 +130,28 @@ public class CPU {
                         pc++;
                         break;
                     case LDD: // Rd <- [A]
-                        if (legal(ir.p)) {
+                        if (!isValidAddress(ir.p)) {
+                            cpuStop = true;
+                            continue;
+                        } else{
                             reg[ir.ra] = m[ir.p].p;
                             pc++;
                         }
                         break;
                     case LDX: // RD <- [RS] // NOVA
-                        if (legal(reg[ir.rb])) {
+                        if (!isValidAddress(reg[ir.rb])) {
+                            cpuStop = true;
+                            continue;
+                        } else {
                             reg[ir.ra] = m[reg[ir.rb]].p;
                             pc++;
                         }
                         break;
                     case STD: // [A] ← Rs
-                        if (legal(ir.p)) {
+                        if (!isValidAddress(ir.p)) {
+                            cpuStop = true;
+                            continue;
+                        } else {
                             m[ir.p].opc = Opcode.DATA;
                             m[ir.p].p = reg[ir.ra];
                             pc++;
@@ -132,12 +162,14 @@ public class CPU {
                         }
                         break;
                     case STX: // [Rd] ←Rs
-                        if (legal(reg[ir.ra])) {
+                        if (!isValidAddress(reg[ir.ra])) {
+                            cpuStop = true;
+                            continue;
+                        } else {
                             m[reg[ir.ra]].opc = Opcode.DATA;
                             m[reg[ir.ra]].p = reg[ir.rb];
                             pc++;
                         }
-                        ;
                         break;
                     case MOVE: // RD <- RS
                         reg[ir.ra] = reg[ir.rb];
@@ -146,67 +178,116 @@ public class CPU {
                     // Instrucoes Aritmeticas
                     case ADD: // Rd ← Rd + Rs
                         reg[ir.ra] = reg[ir.ra] + reg[ir.rb];
-                        testOverflow(reg[ir.ra]);
+                        if (!verifyOverflow(reg[ir.ra])) {
+                            cpuStop = true;
+                            continue;
+                        }
                         pc++;
                         break;
                     case ADDI: // Rd ← Rd + k
                         reg[ir.ra] = reg[ir.ra] + ir.p;
-                        testOverflow(reg[ir.ra]);
+                        if (!verifyOverflow(reg[ir.ra])) {
+                            cpuStop = true;
+                            continue;
+                        }
                         pc++;
                         break;
                     case SUB: // Rd ← Rd - Rs
                         reg[ir.ra] = reg[ir.ra] - reg[ir.rb];
-                        testOverflow(reg[ir.ra]);
+                        if (!verifyOverflow(reg[ir.ra])) {
+                            cpuStop = true;
+                            continue;
+                        }
                         pc++;
                         break;
                     case SUBI: // RD <- RD - k // NOVA
                         reg[ir.ra] = reg[ir.ra] - ir.p;
-                        testOverflow(reg[ir.ra]);
+                        if (!verifyOverflow(reg[ir.ra])) {
+                            cpuStop = true;
+                            continue;
+                        }
                         pc++;
                         break;
                     case MULT: // Rd <- Rd * Rs
                         reg[ir.ra] = reg[ir.ra] * reg[ir.rb];
-                        testOverflow(reg[ir.ra]);
+                        if (!verifyOverflow(reg[ir.ra])) {
+                            cpuStop = true;
+                            continue;
+                        }
                         pc++;
                         break;
 
                     // Instrucoes JUMP
                     case JMP: // PC <- k
+                        if (!isValidAddress(ir.p)) {
+                            cpuStop = true;
+                            continue;
+                        }
                         pc = ir.p;
                         break;
                     case JMPIM: // PC <- [A]
-                        pc = m[ir.p].p;
+                        if (!isValidAddress(ir.p)) {
+                            cpuStop = true;
+                            continue;
+                        }
+                        int destIM = m[ir.p].p;
+                        if (!isValidAddress(destIM)) {
+                            cpuStop = true;
+                            continue;
+                        }
+                        pc = destIM;
                         break;
-                    case JMPIG: // If Rc > 0 Then PC ← Rs Else PC ← PC +1
+                    case JMPIG: // If Rc > 0 Then PC <- Rs Else PC <- PC +1
                         if (reg[ir.rb] > 0) {
+                            if (!isValidAddress(reg[ir.ra])) {
+                                cpuStop = true;
+                                continue;
+                            }
                             pc = reg[ir.ra];
                         } else {
                             pc++;
                         }
                         break;
-                    case JMPIGK: // If RC > 0 then PC <- k else PC++
+
+                    case JMPIGK: // If Rc > 0 then PC <- k else PC++
                         if (reg[ir.rb] > 0) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
+                            }
                             pc = ir.p;
                         } else {
                             pc++;
                         }
                         break;
-                    case JMPILK: // If RC < 0 then PC <- k else PC++
+                    case JMPILK: // If Rc < 0 then PC <- k else PC++
                         if (reg[ir.rb] < 0) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
+                            }
                             pc = ir.p;
                         } else {
                             pc++;
                         }
                         break;
-                    case JMPIEK: // If RC = 0 then PC <- k else PC++
+                    case JMPIEK: // If Rc = 0 then PC <- k else PC++
                         if (reg[ir.rb] == 0) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
+                            }
                             pc = ir.p;
                         } else {
                             pc++;
                         }
                         break;
-                    case JMPIL: // if Rc < 0 then PC <- Rs Else PC <- PC +1
+                    case JMPIL: // If Rc < 0 Then PC <- Rs Else PC <- PC +1
                         if (reg[ir.rb] < 0) {
+                            if (!isValidAddress(reg[ir.ra])) {
+                                cpuStop = true;
+                                continue;
+                            }
                             pc = reg[ir.ra];
                         } else {
                             pc++;
@@ -214,43 +295,76 @@ public class CPU {
                         break;
                     case JMPIE: // If Rc = 0 Then PC <- Rs Else PC <- PC +1
                         if (reg[ir.rb] == 0) {
+                            if (!isValidAddress(reg[ir.ra])) {
+                                cpuStop = true;
+                                continue;
+                            }
                             pc = reg[ir.ra];
                         } else {
                             pc++;
                         }
                         break;
-                    case JMPIGM: // If RC > 0 then PC <- [A] else PC++
-                        if (legal(ir.p)){
-                            if (reg[ir.rb] > 0) {
-                                pc = m[ir.p].p;
-                            } else {
-                                pc++;
+                    case JMPIGM: // If Rc > 0 then PC <- [A] else PC++
+                        if (reg[ir.rb] > 0) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
                             }
-                        }
-                        break;
-                    case JMPILM: // If RC < 0 then PC <- k else PC++
-                        if (reg[ir.rb] < 0) {
-                            pc = m[ir.p].p;
-                        } else {
-                            pc++;
-                        }
-                        break;
-                    case JMPIEM: // If RC = 0 then PC <- k else PC++
-                        if (reg[ir.rb] == 0) {
-                            pc = m[ir.p].p;
-                        } else {
-                            pc++;
-                        }
-                        break;
-                    case JMPIGT: // If RS>RC then PC <- k else PC++
-                        if (reg[ir.ra] > reg[ir.rb]) {
-                            pc = ir.p;
+                            int destIGM = m[ir.p].p;
+                            if (!isValidAddress(destIGM)) {
+                                cpuStop = true;
+                                continue;
+                            }
+                            pc = destIGM;
                         } else {
                             pc++;
                         }
                         break;
 
-                    case DATA: // pc está sobre área supostamente de dados
+                    case JMPILM: // If Rc < 0 then PC <- [A] else PC++
+                        if (reg[ir.rb] < 0) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
+                            }
+                            int destILM = m[ir.p].p;
+                            if (!isValidAddress(destILM)) {
+                                cpuStop = true;
+                                continue;
+                            }
+                            pc = destILM;
+                        } else {
+                            pc++;
+                        }
+                        break;
+                    case JMPIEM: // If Rc = 0 then PC <- [A] else PC++
+                        if (reg[ir.rb] == 0) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
+                            }
+                            int destIEM = m[ir.p].p;
+                            if (!isValidAddress(destIEM)) {
+                                cpuStop = true;
+                                continue;
+                            }
+                            pc = destIEM;
+                        } else {
+                            pc++;
+                        }
+                        break;
+                    case JMPIGT: // If Rs > Rc then PC <- k else PC++
+                        if (reg[ir.ra] > reg[ir.rb]) {
+                            if (!isValidAddress(ir.p)) {
+                                cpuStop = true;
+                                continue;
+                            }
+                            pc = ir.p;
+                        } else {
+                            pc++;
+                        }
+                        break;
+                    case DATA:
                         irpt = Interrupts.intInstrucaoInvalida;
                         break;
 
@@ -278,6 +392,10 @@ public class CPU {
                 ih.handle(irpt);                  // desvia para rotina de tratamento - esta rotina é do SO
                 cpuStop = true;                   // nesta versao, para a CPU
             }
+            if (!isValidAddress(pc)) {
+                break;
+            }
+
         } // FIM DO CICLO DE UMA INSTRUÇÃO
     }
 

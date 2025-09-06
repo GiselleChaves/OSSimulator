@@ -3,14 +3,14 @@ package util;
 // ------- U T I L I T A R I O S D O S I S T E M A
 // ------- load é invocado a partir de requisição do usuário
 
-import hardware.HW;
+import hardware.Hw;
 import hardware.Word;
 
 // carga na memória
 public class Utilities {
-    private HW hw;
+    private Hw hw;
 
-    public Utilities(HW _hw) {
+    public Utilities(Hw _hw) {
         hw = _hw;
     }
 

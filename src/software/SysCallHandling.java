@@ -1,12 +1,12 @@
 package software;
 
-import hardware.HW;
+import hardware.Hw;
 
 // ------- C H A M A D A S D E S I S T E M A - rotinas de tratamento
 public class SysCallHandling {
-    private HW hw; // referencia ao hw se tiver que setar algo
+    private Hw hw; // referencia ao hw se tiver que setar algo
 
-    public SysCallHandling(HW _hw) {
+    public SysCallHandling(Hw _hw) {
         hw = _hw;
     }
 

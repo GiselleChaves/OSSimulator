@@ -1,10 +1,10 @@
 package hardware;
 
-public class HW {
+public class Hw {
     public Memory mem;
     public CPU cpu;
 
-    public HW(int tamMem) {
+    public Hw(int tamMem) {
         mem = new Memory(tamMem);
         cpu = new CPU(mem, true); // true liga debug
     }
