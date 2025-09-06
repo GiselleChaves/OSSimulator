@@ -1,4 +1,4 @@
-# Mini-SO Didático - Simulador de Sistema Operacional
+# SO Didático - Simulador de Sistema Operacional
 
 Este projeto implementa um simulador de sistema operacional didático em Java, conforme especificação do Prof. Fernando Dotti (PUCRS). O sistema inclui Gerenciamento de Memória paginado, Gerenciamento de Processos, Escalonador Round-Robin com preempção por tempo, e funcionamento multithread.
 
@@ -41,7 +41,7 @@ Este projeto implementa um simulador de sistema operacional didático em Java, c
 ```bash
 java -cp bin Main
 ```
-Comandos para testar: `new soma`, `ps`, `dump 1`, `exec 1`, `execAll`, `exit`
+Comandos para testar: `help`, `frames`, `new fatorial`, `new PC`, `ps`, `dump 1`, `execAll`, `exit`
 
 **🧪 Testes Automatizados:**
 ```bash
@@ -199,7 +199,10 @@ src/
 
 ## Desenvolvedor
 
-[Nome do Desenvolvedor]
+- Giselle Gonçalves Chaves
+- Gustavo Caldeira de Mesquita
+- Henrique de Menezes Pinto Ribeiro
+- Kauã Rodrigues Souza
 
 ## Observações
 

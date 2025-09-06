@@ -35,12 +35,16 @@ public class CPU implements Runnable {
     // Controle de preempção por tempo
     private int delta;          // fatia de tempo em número de instruções
     private int instructionCount; // contador de instruções executadas na fatia atual
+    private boolean preemptive; // se false, não gera TIMER (modo exec debug)
     
     // Referência ao SO para tradução de endereços
     private SO so;
     
     // Controle de thread
     private boolean active;
+
+    // Referência ao PCB corrente (para exec debug e interrupções)
+    private PCB currentPCB;
 
     public CPU(Memory _mem, boolean _debug) { // ref a MEMORIA passada na criacao da CPU
         maxInt = 32767;            // capacidade de representacao modelada
@@ -54,6 +58,8 @@ public class CPU implements Runnable {
         delta = 5;
         instructionCount = 0;
         active = false;
+        preemptive = true;
+        currentPCB = null;
     }
 
     public void setSO(SO so) {
@@ -63,6 +69,10 @@ public class CPU implements Runnable {
     public void setDelta(int delta) {
         this.delta = delta;
     }
+
+    public void setPreemptive(boolean preemptive) { this.preemptive = preemptive; }
+
+    public PCB getCurrentPCB() { return currentPCB; }
 
     public void setAddressOfHandlers(InterruptHandling _ih, SysCallHandling _sysCall) {
         ih = _ih;                  // aponta para rotinas de tratamento de int
@@ -80,6 +90,7 @@ public class CPU implements Runnable {
         instructionCount = 0; // Reset contador de instruções
         cpuStop = false;
         debug = pcb.trace;
+        currentPCB = pcb;
     }
 
     public void saveContext(PCB pcb) {
@@ -107,17 +118,23 @@ public class CPU implements Runnable {
     // Tradução de endereço lógico para físico via SO
     private int translateAddress(int logicalAddr) {
         if (so != null) {
-            PCB currentPCB = so.scheduler.getRunning();
-            if (currentPCB != null) {
-                return so.traduzEndereco(currentPCB, logicalAddr);
+            PCB pcbForAccess = (so.scheduler.getRunning() != null) ? so.scheduler.getRunning() : currentPCB;
+            if (pcbForAccess != null) {
+                return so.traduzEndereco(pcbForAccess, logicalAddr);
             }
         }
-        return logicalAddr; // Fallback para compatibilidade
+        return logicalAddr; // Fallback para compatibilidade (não deve ocorrer)
     }
 
     // Acesso à memória com tradução
     private Word readMemory(int logicalAddr) {
-        int physicalAddr = translateAddress(logicalAddr);
+        int physicalAddr;
+        try {
+            physicalAddr = translateAddress(logicalAddr);
+        } catch (RuntimeException e) {
+            irpt = Interrupts.intEnderecoInvalido;
+            return new Word(Opcode.___, -1, -1, -1);
+        }
         if (!isValidAddress(physicalAddr)) {
             irpt = Interrupts.intEnderecoInvalido;
             return new Word(Opcode.___, -1, -1, -1);
@@ -126,7 +143,13 @@ public class CPU implements Runnable {
     }
 
     private void writeMemory(int logicalAddr, Word word) {
-        int physicalAddr = translateAddress(logicalAddr);
+        int physicalAddr;
+        try {
+            physicalAddr = translateAddress(logicalAddr);
+        } catch (RuntimeException e) {
+            irpt = Interrupts.intEnderecoInvalido;
+            return;
+        }
         if (!isValidAddress(physicalAddr)) {
             irpt = Interrupts.intEnderecoInvalido;
             return;
@@ -149,10 +172,9 @@ public class CPU implements Runnable {
         }
     }
 
-    public void setContext(int _pc) {                 // usado para setar o contexto da cpu para rodar um processo
-        // [ nesta versao é somente colocar o PC na posicao 0 ]
-        pc = _pc;                                     // pc cfe endereco logico
-        irpt = Interrupts.noInterrupt;                // reset da interrupcao registrada
+    public void setContext(int _pc) {
+        pc = _pc;
+        irpt = Interrupts.noInterrupt;
         instructionCount = 0;
     }
 
@@ -166,7 +188,6 @@ public class CPU implements Runnable {
             return; // Erro de acesso à memória
         }
 
-        // resto é dump de debug
         if (debug) {
             System.out.print("                                              regs: ");
             for (int i = 0; i < 10; i++) {
@@ -179,303 +200,115 @@ public class CPU implements Runnable {
             u.dump(ir);
         }
 
-        // --------------------------------------------------------------------------------------------------
-        // FASE DE EXECUCAO DA INSTRUCAO CARREGADA NO ir
-
         if (!isValidInstruction(ir.opc)) {
             irpt = Interrupts.intInstrucaoInvalida;
             return;
         }
 
-        switch (ir.opc) {       // conforme o opcode (código de operação) executa
-
-            // Instrucoes de Busca e Armazenamento em Memoria
-            case LDI: // Rd ← k        veja a tabela de instrucoes do HW simulado para entender a semantica da instrucao
-                reg[ir.ra] = ir.p;
-                pc++;
-                break;
-            case LDD: // Rd <- [A]
+        switch (ir.opc) {
+            case LDI:
+                reg[ir.ra] = ir.p; pc++; break;
+            case LDD:
                 Word dataWord = readMemory(ir.p);
-                if (irpt == Interrupts.noInterrupt) {
-                    reg[ir.ra] = dataWord.p;
-                    pc++;
-                }
+                if (irpt == Interrupts.noInterrupt) { reg[ir.ra] = dataWord.p; pc++; }
                 break;
-            case LDX: // RD <- [RS] // NOVA
+            case LDX:
                 Word dataWordX = readMemory(reg[ir.rb]);
-                if (irpt == Interrupts.noInterrupt) {
-                    reg[ir.ra] = dataWordX.p;
-                    pc++;
-                }
+                if (irpt == Interrupts.noInterrupt) { reg[ir.ra] = dataWordX.p; pc++; }
                 break;
-            case STD: // [A] ← Rs
+            case STD:
                 Word storeWord = new Word(Opcode.DATA, -1, -1, reg[ir.ra]);
                 writeMemory(ir.p, storeWord);
-                if (irpt == Interrupts.noInterrupt) {
-                    pc++;
-                    if (debug) {
-                        System.out.print("                                  ");
-                        u.dump(ir.p, ir.p + 1);
-                    }
-                }
+                if (irpt == Interrupts.noInterrupt) { pc++; if (debug) { System.out.print("                                  "); u.dump(ir.p, ir.p + 1); } }
                 break;
-            case STX: // [Rd] ←Rs
+            case STX:
                 Word storeWordX = new Word(Opcode.DATA, -1, -1, reg[ir.rb]);
                 writeMemory(reg[ir.ra], storeWordX);
-                if (irpt == Interrupts.noInterrupt) {
-                    pc++;
-                }
+                if (irpt == Interrupts.noInterrupt) { pc++; }
                 break;
-            case MOVE: // RD <- RS
-                reg[ir.ra] = reg[ir.rb];
-                pc++;
-                break;
-            // Instrucoes Aritmeticas
-            case ADD: // Rd ← Rd + Rs
-                reg[ir.ra] = reg[ir.ra] + reg[ir.rb];
-                if (!verifyOverflow(reg[ir.ra])) {
-                    return;
-                }
-                pc++;
-                break;
-            case ADDI: // Rd ← Rd + k
-                reg[ir.ra] = reg[ir.ra] + ir.p;
-                if (!verifyOverflow(reg[ir.ra])) {
-                    return;
-                }
-                pc++;
-                break;
-            case SUB: // Rd ← Rd - Rs
-                reg[ir.ra] = reg[ir.ra] - reg[ir.rb];
-                if (!verifyOverflow(reg[ir.ra])) {
-                    return;
-                }
-                pc++;
-                break;
-            case SUBI: // RD <- RD - k // NOVA
-                reg[ir.ra] = reg[ir.ra] - ir.p;
-                if (!verifyOverflow(reg[ir.ra])) {
-                    return;
-                }
-                pc++;
-                break;
-            case MULT: // Rd <- Rd * Rs
-                reg[ir.ra] = reg[ir.ra] * reg[ir.rb];
-                if (!verifyOverflow(reg[ir.ra])) {
-                    return;
-                }
-                pc++;
-                break;
-
-            // Instrucoes JUMP
-            case JMP: // PC <- k
-                if (!isValidAddress(ir.p)) {
-                    return;
-                }
-                pc = ir.p;
-                break;
-            case JMPIM: // PC <- [A]
+            case MOVE:
+                reg[ir.ra] = reg[ir.rb]; pc++; break;
+            case ADD:
+                reg[ir.ra] = reg[ir.ra] + reg[ir.rb]; if (!verifyOverflow(reg[ir.ra])) { return; } pc++; break;
+            case ADDI:
+                reg[ir.ra] = reg[ir.ra] + ir.p; if (!verifyOverflow(reg[ir.ra])) { return; } pc++; break;
+            case SUB:
+                reg[ir.ra] = reg[ir.ra] - reg[ir.rb]; if (!verifyOverflow(reg[ir.ra])) { return; } pc++; break;
+            case SUBI:
+                reg[ir.ra] = reg[ir.ra] - ir.p; if (!verifyOverflow(reg[ir.ra])) { return; } pc++; break;
+            case MULT:
+                reg[ir.ra] = reg[ir.ra] * reg[ir.rb]; if (!verifyOverflow(reg[ir.ra])) { return; } pc++; break;
+            case JMP:
+                if (!isValidAddress(ir.p)) { return; } pc = ir.p; break;
+            case JMPIM:
                 Word jumpAddr = readMemory(ir.p);
-                if (irpt == Interrupts.noInterrupt) {
-                    int destIM = jumpAddr.p;
-                    if (!isValidAddress(destIM)) {
-                        return;
-                    }
-                    pc = destIM;
-                }
+                if (irpt == Interrupts.noInterrupt) { int destIM = jumpAddr.p; if (!isValidAddress(destIM)) { return; } pc = destIM; }
                 break;
-            case JMPIG: // If Rc > 0 Then PC <- Rs Else PC <- PC +1
-                if (reg[ir.rb] > 0) {
-                    if (!isValidAddress(reg[ir.ra])) {
-                        return;
-                    }
-                    pc = reg[ir.ra];
-                } else {
-                    pc++;
-                }
-                break;
-
-            case JMPIGK: // If Rc > 0 then PC <- k else PC++
-                if (reg[ir.rb] > 0) {
-                    if (!isValidAddress(ir.p)) {
-                        return;
-                    }
-                    pc = ir.p;
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPILK: // If Rc < 0 then PC <- k else PC++
-                if (reg[ir.rb] < 0) {
-                    if (!isValidAddress(ir.p)) {
-                        return;
-                    }
-                    pc = ir.p;
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPIEK: // If Rc = 0 then PC <- k else PC++
-                if (reg[ir.rb] == 0) {
-                    if (!isValidAddress(ir.p)) {
-                        return;
-                    }
-                    pc = ir.p;
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPIL: // If Rc < 0 Then PC <- Rs Else PC <- PC +1
-                if (reg[ir.rb] < 0) {
-                    if (!isValidAddress(reg[ir.ra])) {
-                        return;
-                    }
-                    pc = reg[ir.ra];
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPIE: // If Rc = 0 Then PC <- Rs Else PC <- PC +1
-                if (reg[ir.rb] == 0) {
-                    if (!isValidAddress(reg[ir.ra])) {
-                        return;
-                    }
-                    pc = reg[ir.ra];
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPIGM: // If Rc > 0 then PC <- [A] else PC++
-                if (reg[ir.rb] > 0) {
-                    Word jumpAddrIGM = readMemory(ir.p);
-                    if (irpt == Interrupts.noInterrupt) {
-                        int destIGM = jumpAddrIGM.p;
-                        if (!isValidAddress(destIGM)) {
-                            return;
-                        }
-                        pc = destIGM;
-                    }
-                } else {
-                    pc++;
-                }
-                break;
-
-            case JMPILM: // If Rc < 0 then PC <- [A] else PC++
-                if (reg[ir.rb] < 0) {
-                    Word jumpAddrILM = readMemory(ir.p);
-                    if (irpt == Interrupts.noInterrupt) {
-                        int destILM = jumpAddrILM.p;
-                        if (!isValidAddress(destILM)) {
-                            return;
-                        }
-                        pc = destILM;
-                    }
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPIEM: // If Rc = 0 then PC <- [A] else PC++
-                if (reg[ir.rb] == 0) {
-                    Word jumpAddrIEM = readMemory(ir.p);
-                    if (irpt == Interrupts.noInterrupt) {
-                        int destIEM = jumpAddrIEM.p;
-                        if (!isValidAddress(destIEM)) {
-                            return;
-                        }
-                        pc = destIEM;
-                    }
-                } else {
-                    pc++;
-                }
-                break;
-            case JMPIGT: // If Rs > Rc then PC <- k else PC++
-                if (reg[ir.ra] > reg[ir.rb]) {
-                    if (!isValidAddress(ir.p)) {
-                        return;
-                    }
-                    pc = ir.p;
-                } else {
-                    pc++;
-                }
-                break;
+            case JMPIG:
+                if (reg[ir.rb] > 0) { if (!isValidAddress(reg[ir.ra])) { return; } pc = reg[ir.ra]; } else { pc++; } break;
+            case JMPIGK:
+                if (reg[ir.rb] > 0) { if (!isValidAddress(ir.p)) { return; } pc = ir.p; } else { pc++; } break;
+            case JMPILK:
+                if (reg[ir.rb] < 0) { if (!isValidAddress(ir.p)) { return; } pc = ir.p; } else { pc++; } break;
+            case JMPIEK:
+                if (reg[ir.rb] == 0) { if (!isValidAddress(ir.p)) { return; } pc = ir.p; } else { pc++; } break;
+            case JMPIL:
+                if (reg[ir.rb] < 0) { if (!isValidAddress(reg[ir.ra])) { return; } pc = reg[ir.ra]; } else { pc++; } break;
+            case JMPIE:
+                if (reg[ir.rb] == 0) { if (!isValidAddress(reg[ir.ra])) { return; } pc = reg[ir.ra]; } else { pc++; } break;
+            case JMPIGM:
+                if (reg[ir.rb] > 0) { Word jumpAddrIGM = readMemory(ir.p); if (irpt == Interrupts.noInterrupt) { int destIGM = jumpAddrIGM.p; if (!isValidAddress(destIGM)) { return; } pc = destIGM; } } else { pc++; } break;
+            case JMPILM:
+                if (reg[ir.rb] < 0) { Word jumpAddrILM = readMemory(ir.p); if (irpt == Interrupts.noInterrupt) { int destILM = jumpAddrILM.p; if (!isValidAddress(destILM)) { return; } pc = destILM; } } else { pc++; } break;
+            case JMPIEM:
+                if (reg[ir.rb] == 0) { Word jumpAddrIEM = readMemory(ir.p); if (irpt == Interrupts.noInterrupt) { int destIEM = jumpAddrIEM.p; if (!isValidAddress(destIEM)) { return; } pc = destIEM; } } else { pc++; } break;
+            case JMPIGT:
+                if (reg[ir.ra] > reg[ir.rb]) { if (!isValidAddress(ir.p)) { return; } pc = ir.p; } else { pc++; } break;
             case DATA:
-                irpt = Interrupts.intInstrucaoInvalida;
-                break;
-
-            // Chamadas de sistema
+                irpt = Interrupts.intInstrucaoInvalida; break;
             case SYSCALL:
-                sysCall.handle(); // <<<<< aqui desvia para rotina de chamada de sistema, no momento so
-                // temos IO
-                pc++;
-                break;
-
-            case STOP: // por enquanto, para execucao
-                irpt = Interrupts.intSysCallStop;
-                break;
-
-            // Inexistente
+                sysCall.handle(); pc++; break;
+            case STOP:
+                irpt = Interrupts.intSysCallStop; break;
             default:
-                irpt = Interrupts.intInstrucaoInvalida;
-                break;
+                irpt = Interrupts.intInstrucaoInvalida; break;
         }
 
         // Incrementar contador de instruções e verificar preempção
         if (irpt == Interrupts.noInterrupt) {
             instructionCount++;
-            if (instructionCount >= delta) {
+            if (preemptive && instructionCount >= delta) {
                 irpt = Interrupts.intTimer;
                 instructionCount = 0;
             }
         }
 
-        // VERIFICA INTERRUPÇÃO !!! - TERCEIRA FASE DO CICLO DE INSTRUÇÕES
-        if (irpt != Interrupts.noInterrupt) { // existe interrupção
-            ih.handle(irpt);                  // desvia para rotina de tratamento - esta rotina é do SO
-            irpt = Interrupts.noInterrupt;    // Reset interrupção após tratamento
+        // VERIFICA INTERRUPÇÃO
+        if (irpt != Interrupts.noInterrupt) {
+            ih.handle(irpt);
+            irpt = Interrupts.noInterrupt;
         }
     }
 
-    public void run() {                               // execucao da CPU supoe que o contexto da CPU, vide acima,
-        // esta devidamente setado
+    public void run() {
         active = true;
         while (active) {
-            PCB currentPCB = (so != null && so.scheduler != null) ? so.scheduler.getRunning() : null;
-            if (currentPCB != null && currentPCB.state == PCB.ProcState.RUNNING) {
+            PCB current = (so != null && so.scheduler != null) ? so.scheduler.getRunning() : null;
+            if (current != null && current.state == PCB.ProcState.RUNNING) {
+                setPreemptive(true);
+                currentPCB = current;
                 step();
             } else {
-                // CPU aguarda processo para executar
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+                try { Thread.sleep(50); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
             }
         }
     }
 
-    public void stopCPU() {
-        active = false;
-        cpuStop = true;
-    }
+    public void stopCPU() { active = false; cpuStop = true; }
 
-    public int getMaxInt() {
-        return maxInt;
-    }
-
-    public int getPc() {
-        return pc;
-    }
-
-    public int[] getReg() {
-        return reg;
-    }
-
-    public int getDelta() {
-        return delta;
-    }
-
-    public int getInstructionCount() {
-        return instructionCount;
-    }
+    public int getMaxInt() { return maxInt; }
+    public int getPc() { return pc; }
+    public int[] getReg() { return reg; }
+    public int getDelta() { return delta; }
+    public int getInstructionCount() { return instructionCount; }
 }

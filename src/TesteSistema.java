@@ -1,7 +1,7 @@
 public class TesteSistema {
     
     public static void main(String[] args) {
-        System.out.println("=== TESTES AUTOMATIZADOS DO MINI-SO ===\n");
+        System.out.println("=== TESTES AUTOMATIZADOS DO SO ===\n");
         
         testePaginacaoBasica();
         testeRoundRobinComTresProcessos();
@@ -13,15 +13,17 @@ public class TesteSistema {
     
     public static void testePaginacaoBasica() {
         System.out.println("1. Teste Paginação Básica");
-        System.out.println("   tamMem=1024, tamPg=8; new p1 com 40 palavras → numPages=5");
+        System.out.println("   tamMem=1024, tamPg=8; new progMinimo (14 palavras) → numPages=2");
         
         Sistema sistema = new Sistema(1024, 8, 5);
         
-        // Simular criação de processo
-        int pid = sistema.so.newProcess("soma"); // programa pequeno para teste
+        int pid = sistema.so.newProcess("progMinimo");
         if (pid > 0) {
             String dump = sistema.so.dump(pid);
             System.out.println(dump);
+            // Checagem simples: deve ter 2 páginas
+            boolean ok = dump.contains("2 páginas") || dump.contains("2 páginas");
+            System.out.println("   Assert numPages==2: " + (ok ? "OK" : "FALHOU"));
         }
         
         sistema.so.scheduler.shutdown();
@@ -31,21 +33,28 @@ public class TesteSistema {
     
     public static void testeRoundRobinComTresProcessos() {
         System.out.println("2. Teste Round-Robin com 3 processos");
-        System.out.println("   Delta=5; new p1, new p2, new p3, execAll");
+        System.out.println("   Delta=5; new fatorial, new fibonacci10, new PC; execAll");
         
         Sistema sistema = new Sistema(1024, 8, 5);
         
-        // Criar 3 processos
-        int pid1 = sistema.so.newProcess("soma");
-        int pid2 = sistema.so.newProcess("loop");
+        int pid1 = sistema.so.newProcess("fatorial");
+        int pid2 = sistema.so.newProcess("fibonacci10");
         int pid3 = sistema.so.newProcess("progMinimo");
         
         System.out.println("Processos criados: " + pid1 + ", " + pid2 + ", " + pid3);
         
-        // Executar por um tempo limitado
+        // Iniciar threads do sistema (Scheduler + CPU) para execAll funcionar
+        Thread schedulerThread = new Thread(sistema.so.scheduler, "Scheduler");
+        Thread cpuThread = new Thread(sistema.hw.cpu, "CPU");
+        schedulerThread.setDaemon(true);
+        cpuThread.setDaemon(true);
+        schedulerThread.start();
+        cpuThread.start();
+        
+        // Executar por um tempo limitado (deixar RR alternar)
         Thread execThread = new Thread(() -> {
             try {
-                Thread.sleep(2000); // 2 segundos
+                Thread.sleep(3000);
                 sistema.so.scheduler.shutdown();
                 sistema.hw.cpu.stopCPU();
             } catch (InterruptedException e) {
@@ -58,6 +67,8 @@ public class TesteSistema {
         
         try {
             execThread.join();
+            schedulerThread.join(500);
+            cpuThread.join(500);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -70,15 +81,17 @@ public class TesteSistema {
         
         Sistema sistema = new Sistema(1024, 8, 5);
         
-        int pid1 = sistema.so.newProcess("soma"); // termina com STOP
-        int pid2 = sistema.so.newProcess("loop");
+        int pid1 = sistema.so.newProcess("fatorial"); // termina com STOP
+        int pid2 = sistema.so.newProcess("progMinimo");
         
-        // Executar processo que termina
+        // Execução dirigida: roda somente pid1 em modo debug
         sistema.so.exec(pid1);
         
-        // Verificar se foi desalocado
+        // Verificar se pid1 foi removido (dump deve acusar erro)
         String dump = sistema.so.dump(pid1);
         System.out.println(dump);
+        boolean ok = dump.contains("não existe");
+        System.out.println("   Assert pid1 removido: " + (ok ? "OK" : "FALHOU"));
         
         sistema.so.scheduler.shutdown();
         sistema.hw.cpu.stopCPU();
@@ -87,7 +100,7 @@ public class TesteSistema {
     
     public static void testeFuncionamentoContinuo() {
         System.out.println("4. Teste Funcionamento Contínuo");
-        System.out.println("   Sem execAll, processos devem executar automaticamente");
+        System.out.println("   Sem execAll, processos devem executar automaticamente (threads ativas)");
         
         Sistema sistema = new Sistema(1024, 8, 5);
         
@@ -101,13 +114,12 @@ public class TesteSistema {
         schedulerThread.start();
         cpuThread.start();
         
-        // Criar processos - devem executar automaticamente
-        int pid1 = sistema.so.newProcess("soma");
+        int pid1 = sistema.so.newProcess("fatorial");
         int pid2 = sistema.so.newProcess("progMinimo");
         
-        // Aguardar um pouco para ver execução
+        // Aguardar um pouco para ver execução alternando
         try {
-            Thread.sleep(1000);
+            Thread.sleep(1500);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

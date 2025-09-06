@@ -3,8 +3,8 @@ package software;
 import hardware.Hw;
 import hardware.Word;
 import menagers.MemoryManager;
-import menagers.Program;
-import menagers.Programs;
+import program.Program;
+import program.Programs;
 import util.Utilities;
 
 import java.util.*;
@@ -119,15 +119,28 @@ public class SO {
     // Carregamento de programa por página
     public void carregaPrograma(Program programa, PCB pcb) {
         Word[] programImage = programa.image;
-        int tamPg = hw.mem.getTamPg();
-
         for (int i = 0; i < programImage.length; i++) {
             int endLogico = i;
             int endFisico = traduzEndereco(pcb, endLogico);
             hw.mem.write(endFisico, programImage[i]);
         }
-
         System.out.println("Programa '" + programa.name + "' carregado para processo " + pcb.pid);
+    }
+
+    private int computeRequiredWords(Program programa) {
+        int needed = programa.image.length;
+        for (Word w : programa.image) {
+            if (w == null) continue;
+            switch (w.opc) {
+                case LDD: case STD: case JMP: case JMPIM: case JMPIGK: case JMPILK: case JMPIEK:
+                case JMPIGM: case JMPILM: case JMPIEM:
+                    if (w.p >= 0) needed = Math.max(needed, w.p + 1);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return needed;
     }
 
     // ============== GERENTE DE PROCESSOS (GP) ==============
@@ -148,11 +161,13 @@ public class SO {
                 return -1;
             }
 
-            int pid = nextPid.getAndIncrement();
-            PCB pcb = new PCB(pid, nomeProg, programa.image.length, hw.mem.getTamPg());
+            int requiredWords = computeRequiredWords(programa);
 
-            // Alocar memória
-            if (!gmAloca(programa.image.length, pcb)) {
+            int pid = nextPid.getAndIncrement();
+            PCB pcb = new PCB(pid, nomeProg, requiredWords, hw.mem.getTamPg());
+
+            // Alocar memória para código + dados
+            if (!gmAloca(requiredWords, pcb)) {
                 return -1;
             }
 
@@ -166,7 +181,7 @@ public class SO {
             scheduler.addToReady(pcb);
 
             System.out.println("Processo criado: pid=" + pid + ", nome=" + nomeProg +
-                    ", tamanho=" + programa.image.length + " palavras");
+                    ", tamanho=" + requiredWords + " palavras (image=" + programa.image.length + ")");
 
             return pid;
         } finally {
@@ -239,6 +254,21 @@ public class SO {
         }
     }
 
+    public String frames() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== FRAMES (0=livre, 1=ocupado) ===\n");
+        boolean[] v = memoryManager.getFrames();
+        int livres = 0, ocupados = 0;
+        for (boolean b : v) { if (b) ocupados++; else livres++; }
+        sb.append(String.format("Total: %d | Livres: %d | Ocupados: %d | tamPg=%d\n\n", v.length, livres, ocupados, hw.mem.getTamPg()));
+        for (int i = 0; i < v.length; i++) {
+            int ini = i * hw.mem.getTamPg();
+            int fim = ini + hw.mem.getTamPg() - 1;
+            sb.append(String.format("frame %3d: [%4d..%4d]  %s\n", i, ini, fim, v[i] ? "1" : "0"));
+        }
+        return sb.toString();
+    }
+
     public String dumpM(int ini, int fim) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== DUMP MEMÓRIA FÍSICA ").append(ini).append("-").append(fim).append(" ===\n");
@@ -268,6 +298,7 @@ public class SO {
             scheduler.removeProcess(pid);
 
             // Modo debug: execução sem preempção
+            hw.cpu.setPreemptive(false);
             hw.cpu.setContext(pcb);
             pcb.state = PCB.ProcState.RUNNING;
 

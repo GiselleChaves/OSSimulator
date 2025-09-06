@@ -1,4 +1,4 @@
-# 🚀 COMO TESTAR O MINI-SO
+# 🚀 COMO TESTAR O SO
 
 ## 1. Compilar (apenas um comando!)
 ```bash
@@ -13,14 +13,14 @@ java -cp bin Main
 ```
 **Comandos para testar:**
 ```
-so> new soma          # Criar processo
-so> new loop          # Criar outro processo  
-so> ps                # Listar processos
-so> dump 1            # Ver paginação do processo 1
-so> exec 1            # Executar processo 1 até STOP
-so> ps                # Ver estado após execução
-so> execAll           # Executar todos com Round-Robin
-so> exit              # Sair
+so> help              # ver comandos e programas disponíveis
+so> frames            # ver mapa de frames (GM)
+so> new fatorial      # criar um processo (exemplos: fatorial, fibonacci10, PC)
+so> new PC            # bubble sort
+so> ps                # listar processos
+so> dump 1            # ver PCB + mapeamento
+so> execAll           # executar todos por RR
+so> exit              # sair
 ```
 
 ---
@@ -47,5 +47,3 @@ Qualquer teste mostra:
 **Use:** `java -cp bin Main`
 
 Digite os comandos: `new soma`, `ps`, `dump 1`, `exec 1`, `exit`
-
-Demonstra TODAS as funcionalidades obrigatórias de forma interativa! 

@@ -45,7 +45,7 @@ public class Main {
     }
     
     private static void printHelp() {
-        System.out.println("Mini-SO Didático - Simulador de Sistema Operacional");
+        System.out.println("SO Didático - Simulador de Sistema Operacional");
         System.out.println();
         System.out.println("Uso: java Main [opções]");
         System.out.println();

@@ -39,9 +39,12 @@ public class Scheduler implements Runnable {
         lock.lock();
         try {
             if (running != null) {
-                System.out.println("TIMER: Preempção do processo " + running.pid + " após delta instruções");
-                                 // Salvar contexto
-                 so.hw.cpu.saveContext(running);
+                int prevPid = running.pid;
+                int prevPc = running.pc;
+                int delta = so.hw.cpu.getDelta();
+                System.out.println(String.format("[CTX] TIMER: preempção após %d instruções | from pid=%d pc=%d", delta, prevPid, prevPc));
+                // Salvar contexto
+                so.hw.cpu.saveContext(running);
                 // Colocar de volta na fila READY
                 running.state = PCB.ProcState.READY;
                 readyQueue.offer(running);
@@ -57,11 +60,13 @@ public class Scheduler implements Runnable {
         lock.lock();
         try {
             if (running == null && !readyQueue.isEmpty()) {
-                running = readyQueue.poll();
-                if (running != null) {
+                PCB next = readyQueue.poll();
+                if (next != null) {
+                    int nextPid = next.pid;
+                    running = next;
                     running.state = PCB.ProcState.RUNNING;
-                                         so.hw.cpu.setContext(running);
-                    System.out.println("Escalonando processo " + running.pid + " (" + running.nome + ")");
+                    so.hw.cpu.setContext(running);
+                    System.out.println(String.format("[CTX] Switch -> pid=%d (%s) pc=%d", nextPid, running.nome, running.pc));
                 }
             }
         } finally {

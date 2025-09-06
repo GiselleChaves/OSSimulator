@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🔧 Compilando Mini-SO Didático..."
+echo "🔧 Compilando SO Didático..."
 
 # Limpar compilação anterior
 rm -rf bin
@@ -25,13 +25,17 @@ if [ $? -eq 0 ]; then
     echo "2. TESTES AUTOMATIZADOS:"
     echo "   java -cp bin TesteSistema"
     echo ""
-    echo "3. COM PARÂMETROS CUSTOMIZADOS:"
+    echo "3. DEMONSTRAÇÃO COMPLETA:"
+    echo "   java -cp bin TesteSistemaDemo"
+    echo ""
+    echo "4. COM PARÂMETROS CUSTOMIZADOS:"
     echo "   java -cp bin Main --mem 2048 --page 16 --delta 8"
     echo ""
-    echo "4. AJUDA:"
+    echo "5. AJUDA:"
     echo "   java -cp bin Main --help"
     echo ""
     echo "🎯 Para testar rapidamente: java -cp bin Main"
+    echo "🎬 Para ver a demo completa: java -cp bin TesteSistemaDemo"
 else
     echo "❌ Erro na compilação!"
     exit 1

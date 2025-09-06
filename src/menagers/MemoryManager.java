@@ -88,7 +88,7 @@ public class MemoryManager {
             System.out.println("Erro: endereço inválido na memória: " + endereco);
             return false;
         }
-        pos[endereco] = valor;
+        pos[endereco] = new Word(Opcode.DATA, 0, 0, valor);
         return true;
     }
 
@@ -112,4 +112,7 @@ public class MemoryManager {
         return frameQuantity;
     }
 
+    public boolean[] getFrames() {
+        return frames;
+    }
 }

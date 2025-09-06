@@ -78,6 +78,9 @@ public class Shell implements Runnable {
                     case "dumpm":
                         handleDumpM(parts);
                         break;
+                    case "frames":
+                        handleFrames();
+                        break;
                     case "exec":
                         handleExec(parts);
                         break;
@@ -189,6 +192,10 @@ public class Shell implements Runnable {
         }
     }
 
+    private void handleFrames() {
+        System.out.println(so.frames());
+    }
+
     private void handleExec(String[] parts) {
         if (parts.length != 2) {
             System.out.println("Uso: exec <pid>");
@@ -217,7 +224,7 @@ public class Shell implements Runnable {
 
     private void handleHelp() {
         System.out.println();
-        System.out.println("=== AJUDA - Mini-SO Didático ===");
+        System.out.println("=== AJUDA - SO Didático ===");
         System.out.println("Comandos disponíveis:");
         System.out.println("  new <nome>     - Criar novo processo");
         System.out.println("  rm <pid>       - Remover processo");
