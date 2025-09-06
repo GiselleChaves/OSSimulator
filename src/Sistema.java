@@ -3,33 +3,75 @@
 // --------------------------------------------------------------------
 
 import hardware.Hw;
-import program.Programs;
 import software.SO;
+import software.Shell;
 
 public class Sistema {
     public Hw hw;
     public SO so;
-    public Programs progs;
+    public Shell shell;
+    
+    private Thread shellThread;
+    private Thread schedulerThread;
+    private Thread cpuThread;
 
     public Sistema(int tamMem) {
-        hw = new Hw(tamMem);           // memoria do HW tem tamMem palavras
+        this(tamMem, 8, 5); // defaults: tamPg=8, delta=5
+    }
+    
+    public Sistema(int tamMem, int tamPg, int delta) {
+        hw = new Hw(tamMem, tamPg, delta);           // memoria do HW tem tamMem palavras
         so = new SO(hw);
-        hw.cpu.setUtilities(so.utils); // permite cpu fazer dump de memoria ao avancar
-        progs = new Programs();
+        shell = new Shell(so);
+        
+        System.out.println("Sistema inicializado:");
+        System.out.println("  Memória: " + tamMem + " palavras");
+        System.out.println("  Tamanho da página: " + tamPg + " palavras");
+        System.out.println("  Delta (fatia tempo): " + delta + " instruções");
+        System.out.println("  Frames disponíveis: " + hw.mem.getNroFrames());
     }
 
     public void run() {
-
-        so.utils.loadAndExec(progs.retrieveProgram("fatorialV2"));
-
-
-        // so.utils.loadAndExec(progs.retrieveProgram("fatorial"));
-        // fibonacci10,
-        // fibonacci10v2,
-        // progMinimo,
-        // fatorialWRITE, // saida
-        // fibonacciREAD, // entrada
-        // PB
-        // PC, // bubble sort
+        System.out.println("Iniciando threads do sistema...");
+        
+        // Iniciar thread do escalonador
+        schedulerThread = new Thread(so.scheduler, "Scheduler");
+        schedulerThread.setDaemon(true);
+        schedulerThread.start();
+        
+        // Iniciar thread da CPU
+        cpuThread = new Thread(hw.cpu, "CPU");
+        cpuThread.setDaemon(true);
+        cpuThread.start();
+        
+        // Iniciar thread do shell (thread principal)
+        shellThread = new Thread(shell, "Shell");
+        shellThread.start();
+        
+        // Aguardar finalização do shell
+        try {
+            shellThread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        
+        // Finalizar outras threads
+        so.scheduler.shutdown();
+        hw.cpu.stopCPU();
+        
+        try {
+            if (schedulerThread.isAlive()) {
+                schedulerThread.interrupt();
+                schedulerThread.join(1000);
+            }
+            if (cpuThread.isAlive()) {
+                cpuThread.interrupt();
+                cpuThread.join(1000);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        
+        System.out.println("Sistema finalizado");
     }
 }

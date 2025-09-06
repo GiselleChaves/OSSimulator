@@ -7,9 +7,14 @@ public class Word {    // cada posicao da memoria tem uma instrucao (ou um dado)
     public int p;      // parametro para instrucao (k ou A cfe operacao), ou o dado, se opcode = DADO
 
     public Word(Opcode opc, int ra, int rb, int p) { // vide definição da VM - colunas vermelhas da tabela
-        opc = opc;
-        ra = ra;
-        rb = rb;
-        p  = p;
+        this.opc = opc;
+        this.ra = ra;
+        this.rb = rb;
+        this.p = p;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("[%s, %d, %d, %d]", opc, ra, rb, p);
     }
 }
