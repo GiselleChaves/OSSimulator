@@ -7,12 +7,12 @@ package program;
 import hardware.Word;
 
 public class Program {
-    public String name;
-    public Word[] image;
+	public String name;
+	public Word[] image;
 
-    public Program(String n, Word[] i) {
-        name = n;
-        image = i;
-    }
+	public Program(String n, Word[] i) {
+		name = n;
+		image = i;
+	}
 }
 
