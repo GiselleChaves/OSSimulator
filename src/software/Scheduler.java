@@ -13,6 +13,7 @@ public class Scheduler implements Runnable {
     private ReentrantLock lock;
     private Condition hasWork;
     private boolean active;
+    private boolean autoSchedule; // Controla se deve escalonar automaticamente
     
     public Scheduler(SO so) {
         this.so = so;
@@ -21,6 +22,7 @@ public class Scheduler implements Runnable {
         this.lock = new ReentrantLock();
         this.hasWork = lock.newCondition();
         this.active = true;
+        this.autoSchedule = false; // Por padrão, não executa automaticamente
     }
     
     public void addToReady(PCB pcb) {
@@ -28,8 +30,12 @@ public class Scheduler implements Runnable {
         try {
             pcb.state = PCB.ProcState.READY;
             readyQueue.offer(pcb);
-            hasWork.signal(); // Sinaliza que há trabalho
             System.out.println("Processo " + pcb.pid + " (" + pcb.nome + ") adicionado à fila READY");
+            
+            // Só sinaliza se autoSchedule estiver ativo
+            if (autoSchedule) {
+                hasWork.signal();
+            }
         } finally {
             lock.unlock();
         }
@@ -83,7 +89,9 @@ public class Scheduler implements Runnable {
             // Se está em execução, remove
             if (running != null && running.pid == pid) {
                 running = null;
-                hasWork.signal(); // Sinaliza para escalonar próximo
+                if (autoSchedule) {
+                    hasWork.signal(); // Sinaliza para escalonar próximo
+                }
             }
         } finally {
             lock.unlock();
@@ -103,34 +111,47 @@ public class Scheduler implements Runnable {
         return !readyQueue.isEmpty() || running != null;
     }
     
+    public void setAutoSchedule(boolean autoSchedule) {
+        lock.lock();
+        try {
+            this.autoSchedule = autoSchedule;
+            if (autoSchedule && hasReadyProcesses()) {
+                hasWork.signal();
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    public boolean isAutoSchedule() {
+        return autoSchedule;
+    }
+    
     @Override
     public void run() {
         while (active) {
             lock.lock();
             try {
-                // Aguarda sinal de que há trabalho
-                while (readyQueue.isEmpty() && active) {
-                    hasWork.await();
+                // Só aguarda sinal se autoSchedule estiver ativo
+                if (autoSchedule) {
+                    while (readyQueue.isEmpty() && active) {
+                        hasWork.await();
+                    }
+                    
+                    if (!active) break;
+                    
+                    // Escalona próximo processo se não há nenhum rodando
+                    scheduleNext();
+                } else {
+                    // Se não está em autoSchedule, apenas aguarda um pouco
+                    hasWork.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
                 }
-                
-                if (!active) break;
-                
-                // Escalona próximo processo se não há nenhum rodando
-                scheduleNext();
                 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } finally {
                 lock.unlock();
-            }
-            
-            // Pequena pausa para evitar busy-wait
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
             }
         }
     }
@@ -144,4 +165,4 @@ public class Scheduler implements Runnable {
             lock.unlock();
         }
     }
-} 
+}

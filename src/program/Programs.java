@@ -190,7 +190,7 @@ public class Programs {
 							new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1), // POS 41
-                                                        new Word(Opcode.DATA, -1, -1, -1),
+                            new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1),
@@ -292,6 +292,28 @@ public class Programs {
 							new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1),
 							new Word(Opcode.DATA, -1, -1, -1)
+					}),
+			new Program("soma",
+					new Word[]{
+							// Programa simples de soma: soma dois números e armazena o resultado
+							new Word(Opcode.LDI, 0, -1, 10), // r0 = 10 (primeiro número)
+							new Word(Opcode.LDI, 1, -1, 20), // r1 = 20 (segundo número)
+							new Word(Opcode.ADD, 2, 0, -1),  // r2 = r0 + r1 (soma)
+							new Word(Opcode.STD, 2, -1, 8),  // armazena resultado na posição 8
+							new Word(Opcode.LDI, 8, -1, 2),  // syscall para escrita
+							new Word(Opcode.LDI, 9, -1, 8),  // endereço com resultado
+							new Word(Opcode.SYSCALL, -1, -1, -1), // escreve resultado
+							new Word(Opcode.STOP, -1, -1, -1), // para execução
+							new Word(Opcode.DATA, -1, -1, -1)  // posição 8: resultado da soma
+					}),
+			new Program("loop",
+					new Word[]{
+							// Loop infinito para testes de preempção
+							new Word(Opcode.LDI, 0, -1, 0),  // r0 = 0 (contador)
+							new Word(Opcode.LDI, 1, -1, 1),  // r1 = 1 (incremento)
+							new Word(Opcode.ADD, 0, 0, -1),  // r0 = r0 + r1 (incrementa contador)
+							new Word(Opcode.JMP, -1, -1, 2), // volta para incremento (loop infinito)
+							new Word(Opcode.STOP, -1, -1, -1) // nunca será executado
 					})
 	};
 }

@@ -299,7 +299,13 @@ public class CPU implements Runnable {
                 currentPCB = current;
                 step();
             } else {
-                try { Thread.sleep(50); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                // Se não há processo rodando, aguarda um pouco
+                try { 
+                    Thread.sleep(50); 
+                } catch (InterruptedException e) { 
+                    Thread.currentThread().interrupt(); 
+                    break; 
+                }
             }
         }
     }

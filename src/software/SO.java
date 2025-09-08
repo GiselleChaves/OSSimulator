@@ -177,7 +177,7 @@ public class SO {
             // Adicionar à tabela de processos
             processTable.put(pid, pcb);
 
-            // Colocar na fila READY
+            // Colocar na fila READY (mas não executar automaticamente)
             scheduler.addToReady(pcb);
 
             System.out.println("Processo criado: pid=" + pid + ", nome=" + nomeProg +
@@ -330,6 +330,14 @@ public class SO {
             }
 
             System.out.println("Execução do processo " + pid + " finalizada (estado: " + pcb.state + ")");
+            
+            // Se o processo terminou, removê-lo
+            if (pcb.state == PCB.ProcState.TERMINATED) {
+                rm(pid);
+            } else {
+                // Se não terminou, colocar de volta na fila READY
+                scheduler.addToReady(pcb);
+            }
         } finally {
             lock.unlock();
         }
@@ -338,8 +346,8 @@ public class SO {
     public void execAll() {
         System.out.println("Iniciando execução escalonada de todos os processos...");
 
-        // Sinalizar escalonador que há trabalho
-        scheduler.scheduleNext();
+        // Ativar escalonamento automático
+        scheduler.setAutoSchedule(true);
 
         // Aguardar até todos os processos terminarem
         while (scheduler.hasReadyProcesses()) {
@@ -351,6 +359,8 @@ public class SO {
             }
         }
 
+        // Desativar escalonamento automático
+        scheduler.setAutoSchedule(false);
         System.out.println("Todos os processos finalizaram");
     }
 
