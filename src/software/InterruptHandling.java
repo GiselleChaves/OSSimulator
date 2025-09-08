@@ -50,7 +50,7 @@ public class InterruptHandling {
 		PCB running = resolveRunningOrCurrent();
 		if (running != null) {
 			System.out.println("STOP: Processo " + running.pid + " solicitou finalização");
-			running.state = PCB.ProcState.TERMINATED;
+			// Quando um processo acaba, este é desalocado do sistema
 			so.rm(running.pid);
 			so.scheduler.scheduleNext();
 		}
@@ -60,7 +60,6 @@ public class InterruptHandling {
 		PCB running = resolveRunningOrCurrent();
 		if (running != null) {
 			System.out.println("MEMORY_VIOLATION: Processo " + running.pid + " tentou acessar endereço inválido");
-			running.state = PCB.ProcState.TERMINATED;
 			so.rm(running.pid);
 			so.scheduler.scheduleNext();
 		}
@@ -70,7 +69,6 @@ public class InterruptHandling {
 		PCB running = resolveRunningOrCurrent();
 		if (running != null) {
 			System.out.println("OVERFLOW: Processo " + running.pid + " causou overflow aritmético");
-			running.state = PCB.ProcState.TERMINATED;
 			so.rm(running.pid);
 			so.scheduler.scheduleNext();
 		}
@@ -80,7 +78,6 @@ public class InterruptHandling {
 		PCB running = resolveRunningOrCurrent();
 		if (running != null) {
 			System.out.println("INVALID_INSTRUCTION: Processo " + running.pid + " tentou executar instrução inválida");
-			running.state = PCB.ProcState.TERMINATED;
 			so.rm(running.pid);
 			so.scheduler.scheduleNext();
 		}

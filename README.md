@@ -74,7 +74,7 @@ java -cp bin Main --help
 | `ps` | Listar processos | `ps` |
 | `dump <pid>` | Dump de processo específico | `dump 1` |
 | `dumpM <i> <f>` | Dump da memória física | `dumpM 0 50` |
-| `exec <pid>` | Executar processo (modo debug) | `exec 1` |
+| `exec <pid>` | Executar processo (com preempção) | `exec 1` |
 | `execAll` | Executar todos os processos | `execAll` |
 | `traceOn` | Ativar trace global | `traceOn` |
 | `traceOff` | Desativar trace global | `traceOff` |

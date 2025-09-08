@@ -177,7 +177,7 @@ public class SO {
             // Adicionar à tabela de processos
             processTable.put(pid, pcb);
 
-            // Colocar na fila READY (mas não executar automaticamente)
+            // Colocar na fila READY
             scheduler.addToReady(pcb);
 
             System.out.println("Processo criado: pid=" + pid + ", nome=" + nomeProg +
@@ -292,17 +292,17 @@ public class SO {
                 return;
             }
 
-            System.out.println("Executando processo " + pid + " em modo debug (sem preempção)");
+            System.out.println("Executando processo " + pid + " (com preempção)");
 
             // Remover do escalonador se estiver lá
             scheduler.removeProcess(pid);
 
-            // Modo debug: execução sem preempção
-            hw.cpu.setPreemptive(false);
+            // Execução normal: com preempção
+            hw.cpu.setPreemptive(true);
             hw.cpu.setContext(pcb);
             pcb.state = PCB.ProcState.RUNNING;
 
-            // Execução passo a passo até terminar ou dar erro
+            // Execução até terminar ou dar erro
             int maxSteps = 1000; // Limite para evitar loop infinito
             int steps = 0;
 
@@ -331,13 +331,14 @@ public class SO {
 
             System.out.println("Execução do processo " + pid + " finalizada (estado: " + pcb.state + ")");
             
-            // Se o processo terminou, removê-lo
-            if (pcb.state == PCB.ProcState.TERMINATED) {
-                rm(pid);
-            } else {
-                // Se não terminou, colocar de volta na fila READY
-                scheduler.addToReady(pcb);
+            // Verificar se o processo ainda existe na tabela
+            // Se foi removido pelo InterruptHandling, não adicionar de volta
+            PCB currentPcb = processTable.get(pid);
+            if (currentPcb != null && currentPcb.state != PCB.ProcState.TERMINATED) {
+                // Processo ainda existe e não terminou, colocar de volta na fila READY
+                scheduler.addToReady(currentPcb);
             }
+            
         } finally {
             lock.unlock();
         }
