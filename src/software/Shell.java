@@ -23,7 +23,8 @@ public class Shell implements Runnable {
         System.out.println("  ps             - Listar processos");
         System.out.println("  dump <pid>     - Dump de processo");
         System.out.println("  dumpM <i> <f>  - Dump da memória física");
-        System.out.println("  exec <pid>     - Executar processo (modo debug)");
+        System.out.println("  frames         - Mostrar mapa de frames de memória");
+        System.out.println("  exec <pid>     - Executar processo (com preempção)");
         System.out.println("  execAll        - Executar todos os processos");
         System.out.println("  traceOn        - Ativar trace");
         System.out.println("  traceOff       - Desativar trace");
@@ -231,7 +232,8 @@ public class Shell implements Runnable {
         System.out.println("  ps             - Listar processos");
         System.out.println("  dump <pid>     - Dump de processo");
         System.out.println("  dumpM <i> <f>  - Dump da memória física");
-        System.out.println("  exec <pid>     - Executar processo (modo debug)");
+        System.out.println("  frames         - Mostrar mapa de frames de memória");
+        System.out.println("  exec <pid>     - Executar processo (com preempção)");
         System.out.println("  execAll        - Executar todos os processos");
         System.out.println("  traceOn        - Ativar trace");
         System.out.println("  traceOff       - Desativar trace");

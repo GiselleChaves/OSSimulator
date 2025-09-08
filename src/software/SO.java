@@ -292,17 +292,17 @@ public class SO {
                 return;
             }
 
-            System.out.println("Executando processo " + pid + " em modo debug (sem preempção)");
+            System.out.println("Executando processo " + pid);
 
             // Remover do escalonador se estiver lá
             scheduler.removeProcess(pid);
 
-            // Modo debug: execução sem preempção
-            hw.cpu.setPreemptive(false);
+            // Execução normal: com preempção
+            hw.cpu.setPreemptive(true);
             hw.cpu.setContext(pcb);
             pcb.state = PCB.ProcState.RUNNING;
 
-            // Execução passo a passo até terminar ou dar erro
+            // Execução até terminar ou dar erro
             int maxSteps = 1000; // Limite para evitar loop infinito
             int steps = 0;
 
