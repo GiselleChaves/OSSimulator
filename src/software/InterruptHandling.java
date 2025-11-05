@@ -1,6 +1,7 @@
 package software;
 
 import hardware.Interrupts;
+import hardware.DiskDevice;
 
 // ------- I N T E R R U P C O E S - rotinas de tratamento ------
 public class InterruptHandling {
@@ -27,9 +28,62 @@ public class InterruptHandling {
 			case intInstrucaoInvalida:
 				handleInvalidInstruction();
 				break;
+			case intIO:
+				// IO é tratado diretamente via handleIO(PCB)
+				break;
+			case intPageFault:
+				handlePageFault();
+				break;
+			case intDiskIO:
+				// DiskIO é tratado diretamente via handleDiskIO(PCB)
+				break;
 			default:
 				System.out.println("Interrupção desconhecida: " + irpt);
 				break;
+		}
+	}
+	
+	/**
+	 * Tratamento de interrupção de IO
+	 * Chamado quando dispositivo de IO termina operação
+	 */
+	public void handleIO(PCB process) {
+		System.out.println("[INT_IO] Dispositivo de IO terminou operação para processo " + process.pid);
+		
+		// Processo estava bloqueado esperando IO, agora pode voltar para READY
+		if (process.state == PCB.ProcState.BLOCKED) {
+			so.scheduler.unblockProcess(process);
+			System.out.println("[INT_IO] Processo " + process.pid + " desbloqueado e movido para READY");
+		}
+	}
+	
+	/**
+	 * Tratamento de interrupção de Disco
+	 * Chamado quando dispositivo de Disco termina operação de paginação
+	 */
+	public void handleDisk(DiskDevice.DiskOperation operation) {
+		System.out.println("[INT_DISK] Dispositivo de Disco terminou " + operation.type + 
+		                   " para processo " + operation.process.pid + ", página " + operation.pageNumber);
+		
+		// Se foi uma operação de LOAD_PAGE, o processo pode ser desbloqueado
+		if (operation.type == DiskDevice.DiskOpType.LOAD_PAGE) {
+			PCB process = operation.process;
+			if (process.state == PCB.ProcState.BLOCKED) {
+				so.scheduler.unblockProcess(process);
+				System.out.println("[INT_DISK] Processo " + process.pid + " desbloqueado após carga de página");
+			}
+		}
+		// Se foi SAVE_PAGE, nenhuma ação adicional necessária (página já foi invalidada)
+	}
+	
+	/**
+	 * Tratamento de page fault
+	 */
+	private void handlePageFault() {
+		PCB running = resolveRunningOrCurrent();
+		if (running != null) {
+			System.out.println("[PAGE_FAULT] Processo " + running.pid + " acessou página não carregada");
+			// Será implementado na fase de memória virtual
 		}
 	}
 	

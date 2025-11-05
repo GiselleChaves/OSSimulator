@@ -7,6 +7,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Scheduler implements Runnable {
     private BlockingQueue<PCB> readyQueue;
+    private BlockingQueue<PCB> blockedQueue; // Fila de processos bloqueados
     private PCB running;
     private SO so;
     
@@ -18,6 +19,7 @@ public class Scheduler implements Runnable {
     public Scheduler(SO so) {
         this.so = so;
         this.readyQueue = new LinkedBlockingQueue<>();
+        this.blockedQueue = new LinkedBlockingQueue<>();
         this.running = null;
         this.lock = new ReentrantLock();
         this.hasWork = lock.newCondition();
@@ -80,11 +82,59 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /**
+     * Bloqueia o processo em execução (para aguardar IO)
+     */
+    public void blockRunningProcess() {
+        lock.lock();
+        try {
+            if (running != null) {
+                System.out.println("[SCHEDULER] Bloqueando processo " + running.pid);
+                so.hw.cpu.saveContext(running);
+                running.state = PCB.ProcState.BLOCKED;
+                blockedQueue.offer(running);
+                running = null;
+                
+                // Escalona próximo processo
+                if (autoSchedule) {
+                    hasWork.signal();
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Desbloqueia processo e coloca de volta na fila READY
+     */
+    public void unblockProcess(PCB pcb) {
+        lock.lock();
+        try {
+            // Remove da fila de bloqueados
+            blockedQueue.remove(pcb);
+            
+            // Coloca na fila READY
+            pcb.state = PCB.ProcState.READY;
+            readyQueue.offer(pcb);
+            System.out.println("[SCHEDULER] Processo " + pcb.pid + " desbloqueado e adicionado à fila READY");
+            
+            if (autoSchedule) {
+                hasWork.signal();
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+    
     public void removeProcess(int pid) {
         lock.lock();
         try {
             // Remove da fila READY
             readyQueue.removeIf(pcb -> pcb.pid == pid);
+            
+            // Remove da fila BLOCKED
+            blockedQueue.removeIf(pcb -> pcb.pid == pid);
             
             // Se está em execução, remove
             if (running != null && running.pid == pid) {
@@ -108,7 +158,11 @@ public class Scheduler implements Runnable {
     }
     
     public boolean hasReadyProcesses() {
-        return !readyQueue.isEmpty() || running != null;
+        return !readyQueue.isEmpty() || running != null || !blockedQueue.isEmpty();
+    }
+    
+    public int getBlockedCount() {
+        return blockedQueue.size();
     }
     
     public void setAutoSchedule(boolean autoSchedule) {

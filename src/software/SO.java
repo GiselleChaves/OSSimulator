@@ -2,6 +2,9 @@ package software;
 
 import hardware.Hw;
 import hardware.Word;
+import hardware.Opcode;
+import hardware.IODevice;
+import hardware.DiskDevice;
 import menagers.MemoryManager;
 import program.Program;
 import program.Programs;
@@ -16,6 +19,12 @@ public class SO {
     public SysCallHandling sc;
     public Utilities utils;
     public Hw hw;
+    
+    // Dispositivo de IO
+    private IODevice ioDevice;
+    
+    // Dispositivo de Disco (para paginação)
+    private DiskDevice diskDevice;
 
     // Gerente de Memória (GM paginado)
     private MemoryManager memoryManager;
@@ -43,6 +52,12 @@ public class SO {
         hw.cpu.setAddressOfHandlers(ih, sc);
         hw.cpu.setSO(this);
         utils = new Utilities(hw);
+        
+        // Inicializar dispositivo de IO
+        ioDevice = new IODevice(this);
+        
+        // Inicializar dispositivo de Disco
+        diskDevice = new DiskDevice(this);
 
         // Inicializar GM com parâmetros da memória
         memoryManager = new MemoryManager(hw.mem.getTamMem(), hw.mem.getTamPg());
@@ -60,33 +75,51 @@ public class SO {
         globalTrace = false;
         lock = new ReentrantLock();
     }
+    
+    public IODevice getIODevice() {
+        return ioDevice;
+    }
+    
+    public DiskDevice getDiskDevice() {
+        return diskDevice;
+    }
 
     // ============== GERENTE DE MEMÓRIA (GM PAGINADO) ==============
 
     public boolean gmAloca(int nroPalavras, PCB pcb) {
         int numPages = (int) Math.ceil((double) nroPalavras / hw.mem.getTamPg());
         pcb.numPages = numPages;
-        pcb.pageTable = memoryManager.allocate(nroPalavras);
-
-        if (pcb.pageTable == null) {
-            System.out.println("ERRO: Não foi possível alocar " + numPages + " páginas para o processo " + pcb.pid);
+        
+        // MEMÓRIA VIRTUAL: Carregar apenas a primeira página
+        System.out.println("GM: Alocando primeira página para processo " + pcb.pid +
+                " (" + nroPalavras + " palavras, " + numPages + " páginas totais)");
+        
+        // Alocar frame apenas para primeira página
+        int frame = memoryManager.allocateFrame(pcb, 0);
+        if (frame < 0) {
+            System.out.println("ERRO: Não foi possível alocar frame para primeira página do processo " + pcb.pid);
             return false;
         }
-
-        System.out.println("GM: Alocadas " + numPages + " páginas para processo " + pcb.pid +
-                " (" + nroPalavras + " palavras)");
-        System.out.print("Frames alocados: ");
-        for (int i = 0; i < pcb.pageTable.length; i++) {
-            System.out.print("pg" + i + "→frame" + pcb.pageTable[i] + " ");
-        }
-        System.out.println();
+        
+        // Configurar primeira página como válida
+        pcb.pageTable[0].frameNumber = frame;
+        pcb.pageTable[0].valid = true;
+        pcb.pageTable[0].lastAccessTime = System.currentTimeMillis();
+        
+        System.out.println("GM: Primeira página (pg0) alocada no frame " + frame);
+        System.out.println("    Demais páginas serão carregadas sob demanda (page fault)");
 
         return true;
     }
 
     public void gmDesaloca(PCB pcb) {
         if (pcb.pageTable != null) {
-            memoryManager.deallocate(pcb.pageTable);
+            // Desalocar todos os frames em uso
+            for (int i = 0; i < pcb.pageTable.length; i++) {
+                if (pcb.pageTable[i].valid && pcb.pageTable[i].frameNumber >= 0) {
+                    memoryManager.deallocateFrame(pcb.pageTable[i].frameNumber);
+                }
+            }
             System.out.println("GM: Desalocada memória do processo " + pcb.pid);
             pcb.pageTable = null;
         }
@@ -105,7 +138,19 @@ public class SO {
             throw new RuntimeException("Acesso à página " + pagina + " inválida para processo " + pcb.pid);
         }
 
-        int frame = pcb.pageTable[pagina];
+        PageTableEntry entry = pcb.pageTable[pagina];
+        
+        // PAGE FAULT: página não está em memória
+        if (!entry.valid) {
+            System.out.println("[PAGE_FAULT] Processo " + pcb.pid + " acessou página " + pagina + " não carregada");
+            handlePageFault(pcb, pagina);
+            // Após tratamento, entry deve estar válida
+        }
+        
+        // Atualizar tempo de acesso (para LRU)
+        entry.lastAccessTime = System.currentTimeMillis();
+        
+        int frame = entry.frameNumber;
         int endFisico = frame * tamPg + offset;
 
         if (globalTrace || pcb.trace) {
@@ -115,16 +160,171 @@ public class SO {
 
         return endFisico;
     }
+    
+    /**
+     * Tratamento de page fault - ASSÍNCRONO com bloqueio de processo
+     */
+    private void handlePageFault(PCB pcb, int pageNumber) {
+        System.out.println("[PAGE_FAULT] Tratando page fault para processo " + pcb.pid + ", página " + pageNumber);
+        
+        PageTableEntry entry = pcb.pageTable[pageNumber];
+        
+        // Tentar alocar frame
+        int frame = memoryManager.allocateFrame(pcb, pageNumber);
+        
+        // Se não há frame livre, precisa vitimar uma página (SÍNCRONO - vitimação é rápida)
+        if (frame < 0) {
+            System.out.println("[PAGE_FAULT] Sem frames livres, selecionando vítima...");
+            frame = evictPageSync(pcb);
+        }
+        
+        if (frame < 0) {
+            throw new RuntimeException("ERRO: Não foi possível alocar frame para page fault");
+        }
+        
+        // ASSÍNCRONO: Envia pedido de carga de página para o disco
+        System.out.println("[PAGE_FAULT] Enviando pedido de carga de página ao disco...");
+        DiskDevice.DiskOperation operation = new DiskDevice.DiskOperation(
+            DiskDevice.DiskOpType.LOAD_PAGE,
+            pcb,
+            pageNumber,
+            frame,
+            entry.diskAddress
+        );
+        
+        diskDevice.addOperation(operation);
+        
+        // BLOQUEAR processo até disco terminar (será desbloqueado na interrupção de disco)
+        System.out.println("[PAGE_FAULT] Bloqueando processo " + pcb.pid + " até carga completar");
+        pcb.state = PCB.ProcState.BLOCKED;
+        scheduler.blockRunningProcess();
+        
+        // CPU continuará com outro processo enquanto disco carrega a página
+    }
+    
+    /**
+     * Evita uma página (política de vítimas) - versão SÍNCRONA
+     * Usado durante page fault para liberar frame rapidamente
+     */
+    private int evictPageSync(PCB requestingPCB) {
+        int victimFrame = memoryManager.selectVictim();
+        if (victimFrame < 0) {
+            return -1;
+        }
+        
+        MemoryManager.FrameInfo info = memoryManager.getFrameOwner(victimFrame);
+        if (info == null) {
+            return victimFrame;
+        }
+        
+        PCB victimPCB = info.owner;
+        int victimPage = info.pageNumber;
+        
+        System.out.println("[EVICT] Vitimando página " + victimPage + " do processo " + 
+                         victimPCB.pid + " (frame " + victimFrame + ")");
+        
+        PageTableEntry victimEntry = victimPCB.pageTable[victimPage];
+        
+        // SALVAR página no disco (via DiskDevice)
+        // Salvamento é síncrono aqui para simplificar (na prática seria assíncrono também)
+        System.out.println("[EVICT] Salvando página vitimada no disco...");
+        int diskAddr = diskDevice.savePage(victimPCB, victimPage, victimFrame);
+        
+        // Atualizar entrada da tabela de páginas da vítima
+        victimEntry.valid = false;
+        victimEntry.frameNumber = -1;
+        victimEntry.diskAddress = diskAddr;
+        victimEntry.modified = false; // Página foi salva, não está mais modificada
+        
+        // Liberar frame
+        memoryManager.deallocateFrame(victimFrame);
+        
+        System.out.println("[EVICT] Frame " + victimFrame + " liberado, página salva no disco (addr=" + diskAddr + ")");
+        
+        return victimFrame;
+    }
 
-    // Carregamento de programa por página
+    // Carregamento de programa - agora carrega apenas primeira página
     public void carregaPrograma(Program programa, PCB pcb) {
         Word[] programImage = programa.image;
-        for (int i = 0; i < programImage.length; i++) {
-            int endLogico = i;
-            int endFisico = traduzEndereco(pcb, endLogico);
-            hw.mem.write(endFisico, programImage[i]);
+        int tamPg = hw.mem.getTamPg();
+        
+        // Carregar apenas primeira página (lazy loading)
+        int endLogIni = 0;
+        int endLogFim = Math.min(tamPg - 1, programImage.length - 1);
+        
+        carregaPagina(pcb, 0, pcb.pageTable[0].frameNumber, programa);
+        
+        System.out.println("Programa '" + programa.name + "' - primeira página carregada para processo " + pcb.pid);
+        System.out.println("  Demais páginas serão carregadas sob demanda");
+    }
+    
+    /**
+     * Carrega uma página específica do programa na memória
+     */
+    private void carregaPagina(PCB pcb, int pageNumber, int frameNumber) {
+        // Buscar programa original
+        Program programa = null;
+        for (Program p : programs.progs) {
+            if (p != null && p.name.equals(pcb.nome)) {
+                programa = p;
+                break;
+            }
         }
-        System.out.println("Programa '" + programa.name + "' carregado para processo " + pcb.pid);
+        
+        if (programa == null) {
+            System.out.println("ERRO: Programa '" + pcb.nome + "' não encontrado");
+            return;
+        }
+        
+        carregaPagina(pcb, pageNumber, frameNumber, programa);
+    }
+    
+    /**
+     * Carrega uma página específica do programa na memória
+     */
+    private void carregaPagina(PCB pcb, int pageNumber, int frameNumber, Program programa) {
+        Word[] programImage = programa.image;
+        int tamPg = hw.mem.getTamPg();
+        
+        int endLogIni = pageNumber * tamPg;
+        int endLogFim = Math.min(endLogIni + tamPg - 1, programImage.length - 1);
+        
+        int endFisBase = frameNumber * tamPg;
+        
+        for (int logAddr = endLogIni; logAddr <= endLogFim; logAddr++) {
+            int offset = logAddr - endLogIni;
+            int physAddr = endFisBase + offset;
+            hw.mem.write(physAddr, programImage[logAddr]);
+        }
+        
+        // Preencher resto da página com NOPs se necessário
+        for (int offset = (endLogFim - endLogIni + 1); offset < tamPg; offset++) {
+            int physAddr = endFisBase + offset;
+            hw.mem.write(physAddr, new Word(Opcode.DATA, 0, 0, 0));
+        }
+    }
+    
+    /**
+     * Método público para DiskDevice carregar página do programa original
+     * Chamado quando página nunca foi carregada antes (diskAddress < 0)
+     */
+    public void carregaPaginaFromDisk(PCB pcb, int pageNumber, int frameNumber) {
+        // Buscar programa original
+        Program programa = null;
+        for (Program p : programs.progs) {
+            if (p != null && p.name.equals(pcb.nome)) {
+                programa = p;
+                break;
+            }
+        }
+        
+        if (programa == null) {
+            System.out.println("ERRO: Programa '" + pcb.nome + "' não encontrado");
+            return;
+        }
+        
+        carregaPagina(pcb, pageNumber, frameNumber, programa);
     }
 
     private int computeRequiredWords(Program programa) {
@@ -238,14 +438,20 @@ public class SO {
             // Mostrar mapeamento lógico → físico
             sb.append("Mapeamento memória:\n");
             for (int pg = 0; pg < pcb.numPages; pg++) {
-                int frame = pcb.pageTable[pg];
+                PageTableEntry entry = pcb.pageTable[pg];
                 int endLogIni = pg * hw.mem.getTamPg();
                 int endLogFim = Math.min(endLogIni + hw.mem.getTamPg() - 1, pcb.tamanhoEmPalavras - 1);
-                int endFisIni = frame * hw.mem.getTamPg();
-                int endFisFim = endFisIni + hw.mem.getTamPg() - 1;
-
-                sb.append(String.format("  Página %d (end.lóg %d-%d) → Frame %d (end.fís %d-%d)\n",
-                        pg, endLogIni, endLogFim, frame, endFisIni, endFisFim));
+                
+                if (entry.valid) {
+                    int frame = entry.frameNumber;
+                    int endFisIni = frame * hw.mem.getTamPg();
+                    int endFisFim = endFisIni + hw.mem.getTamPg() - 1;
+                    sb.append(String.format("  Página %d (end.lóg %d-%d) → Frame %d (end.fís %d-%d) [VALID]\n",
+                            pg, endLogIni, endLogFim, frame, endFisIni, endFisFim));
+                } else {
+                    sb.append(String.format("  Página %d (end.lóg %d-%d) → NOT IN MEMORY\n",
+                            pg, endLogIni, endLogFim));
+                }
             }
 
             return sb.toString();

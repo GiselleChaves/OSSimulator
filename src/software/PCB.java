@@ -22,7 +22,7 @@ public class PCB {
     public boolean trace;
     
     // Gerenciamento de memória
-    public int[] pageTable;
+    public PageTableEntry[] pageTable;
     public int numPages;
     public int tamanhoEmPalavras;
 
@@ -44,7 +44,12 @@ public class PCB {
         
         // Calcular número de páginas necessárias
         this.numPages = (int) Math.ceil((double) tamanhoEmPalavras / tamPg);
-        this.pageTable = new int[numPages];
+        this.pageTable = new PageTableEntry[numPages];
+        
+        // Inicializar entradas da tabela de páginas
+        for (int i = 0; i < numPages; i++) {
+            this.pageTable[i] = new PageTableEntry();
+        }
     }
 
     @Override
@@ -57,9 +62,9 @@ public class PCB {
         }
         sb.append("\n");
         sb.append(String.format("Memória: %d palavras, %d páginas\n", tamanhoEmPalavras, numPages));
-        sb.append("Tabela de páginas: ");
+        sb.append("Tabela de páginas:\n");
         for (int i = 0; i < pageTable.length; i++) {
-            sb.append(String.format("pg%d→frame%d ", i, pageTable[i]));
+            sb.append(String.format("  pg%d: %s\n", i, pageTable[i].toString()));
         }
         return sb.toString();
     }

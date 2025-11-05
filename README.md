@@ -1,14 +1,39 @@
 # SO Didático - Simulador de Sistema Operacional
 
-Este projeto implementa um simulador de sistema operacional didático em Java, conforme especificação do Prof. Fernando Dotti (PUCRS). O sistema inclui Gerenciamento de Memória paginado, Gerenciamento de Processos, Escalonador Round-Robin com preempção por tempo, e funcionamento multithread.
+Este projeto implementa um simulador de sistema operacional didático em Java, conforme especificação do Prof. Fernando Dotti (PUCRS). O sistema inclui Gerenciamento de Memória paginado com Memória Virtual, Gerenciamento de Processos com três estados, Escalonador Round-Robin preemptivo, IO Assíncrono, e funcionamento multithread completo.
+
+## ✅ Trabalhos Implementados
+
+### 📋 Trabalho 2a - Sistema Concorrente (COMPLETO)
+- **Thread de IO (Console)**: Processa pedidos de IN/OUT assincronamente
+- **Estados de Processo**: NEW, READY, RUNNING, BLOCKED, TERMINATED
+- **IO Assíncrono**: Processo bloqueia ao fazer IO, outro executa enquanto isso
+- **DMA (Direct Memory Access)**: Dispositivo acessa memória diretamente
+- **Fila de Bloqueados**: Processos aguardando IO ficam em fila separada
+- **Interrupção de IO**: Quando IO termina, processo volta para READY
+- **Sistema Reativo**: Shell aceita comandos enquanto processos executam
+
+### 💾 Trabalho 2b - Memória Virtual (COMPLETO - Versão Avançada)
+- **Lazy Loading**: Apenas primeira página carregada ao criar processo
+- **Page Fault Assíncrono**: Detecta acesso a página não carregada e bloqueia processo
+- **Dispositivo de Disco**: Thread separada para operações de paginação (SAVE_PAGE/LOAD_PAGE)
+- **Política de Vítimas**: FIFO quando memória cheia, com salvamento no disco
+- **Tabela de Páginas Estendida**: Flags valid/invalid, modified, lastAccessTime, diskAddress
+- **Carregamento Sob Demanda**: Páginas carregadas do programa original ou do disco
+- **Bloqueio Durante Disco**: Processo fica BLOCKED durante operações de disco
+- **Interrupções de Disco**: Processo desbloqueado quando disco termina operação
+- **DMA para Disco**: Disco acessa memória diretamente para salvar/carregar páginas
+- **Três Estados de Página**: Nunca carregada / Em memória / Salva no disco
 
 ## Características Implementadas
 
-### Gerenciamento de Memória (GM) Paginado
-- Tabela de páginas por processo
+### Gerenciamento de Memória (GM) Paginado com Memória Virtual
+- Tabela de páginas por processo com flags (valid, modified, lastAccessTime)
 - Tradução de endereços lógicos → físicos obrigatória
-- Carga de programas por página
-- Alocação/desalocação de frames
+- Lazy loading: apenas primeira página carregada inicialmente
+- Page fault automático quando página não está em memória
+- Política de vítimas (FIFO) quando frames esgotam
+- Alocação/desalocação de frames individuais
 
 ### Gerenciamento de Processos (GP)
 - PCB completo com contexto da CPU
@@ -21,10 +46,12 @@ Este projeto implementa um simulador de sistema operacional didático em Java, c
 - Troca de contexto automática via TIMER
 - Funcionamento contínuo em thread separada
 
-### Arquitetura Multithread
-- Thread Shell/SO: comandos interativos
-- Thread Escalonador: gerencia fila READY
-- Thread CPU: execução de instruções
+### Arquitetura Multithread Completa
+- **Thread Shell**: Loop eterno aceitando comandos do usuário
+- **Thread CPU**: Loop eterno executando instruções de processos
+- **Thread Scheduler**: Loop eterno escalonando processos (READY → RUNNING)
+- **Thread IODevice**: Loop eterno processando pedidos de IO Console (assíncrono)
+- **Thread DiskDevice**: Loop eterno processando operações de paginação (assíncrono)
 
 ## Como Compilar e Executar
 
@@ -45,7 +72,20 @@ Comandos para testar: `help`, `frames`, `new fatorial`, `new PC`, `ps`, `dump 1`
 
 **🧪 Testes Automatizados:**
 ```bash
-java -cp bin TesteSistema
+java -cp bin TesteSistema           # Testes básicos do sistema
+java -cp bin TesteMemoriaVirtual    # Teste completo de Memória Virtual com Disco
+```
+
+**🔬 Teste de Memória Virtual com Page Faults:**
+```bash
+# Memória pequena força page faults
+java -cp bin Main --mem 64 --page 8
+
+# No shell:
+so> new fibonacci10
+so> dump 1           # Ver que só primeira página está carregada
+so> exec 1           # Observar [PAGE_FAULT] nos logs
+so> dump 1           # Ver páginas carregadas sob demanda
 ```
 
 **⚙️ Com Parâmetros Customizados:**
@@ -64,6 +104,59 @@ java -cp bin Main --help
 - `--page <tamanho>`: Tamanho da página em palavras (default: 8)  
 - `--delta <valor>`: Fatia de tempo em número de instruções (default: 5)
 - `--help`: Mostrar ajuda
+
+## 📊 Logs e Mensagens do Sistema
+
+Durante a execução, o sistema exibe logs para facilitar o entendimento:
+
+- **`[CTX]`** - Troca de contexto (escalonamento de processos)
+- **`[SCHEDULER]`** - Operações do escalonador (bloquear, desbloquear)
+- **`[IO]`** - Operações do dispositivo de IO (leitura/escrita)
+- **`[SYSCALL]`** - Chamadas de sistema (IN, OUT, STOP)
+- **`[INT_IO]`** - Interrupção de IO Console (dispositivo terminou operação)
+- **`[INT_DISK]`** - Interrupção de Disco (operação de paginação concluída)
+- **`[PAGE_FAULT]`** - Page fault (página não está em memória)
+- **`[EVICT]`** - Página sendo vitimada (substituição)
+- **`[DISK]`** - Operações do dispositivo de disco (save/load de páginas)
+- **`[TIMER]`** - Preempção por tempo (fim da fatia)
+
+### Exemplo de Log de Execução com Memória Virtual:
+```
+GM: Alocando primeira página para processo 1 (30 palavras, 4 páginas totais)
+GM: Primeira página (pg0) alocada no frame 0
+    Demais páginas serão carregadas sob demanda (page fault)
+[SCHEDULER] Processo 1 adicionado à fila READY
+[CTX] Switch -> pid=1 (fibonacci10) pc=0
+                      pc: 5       exec: [5, LDI, 4, -1, 5]
+[PAGE_FAULT] Processo 1 acessou página 1 não carregada
+[PAGE_FAULT] Tratando page fault para processo 1, página 1
+[PAGE_FAULT] Enviando pedido de carga de página ao disco...
+[PAGE_FAULT] Bloqueando processo 1 até carga completar
+[DISK] Operação de LOAD_PAGE adicionada à fila (processo 1, página 1)
+[CTX] Switch -> pid=2 (fatorial) pc=0
+[DISK] Processando LOAD_PAGE para processo 1, página 1...
+[DISK] Carregando página 1 do programa 'fibonacci10' para frame 1
+[DISK] LOAD_PAGE concluído: página 1 do processo 1 carregada no frame 1
+[CPU] Interrupção de DISCO sinalizada para processo 1
+[INT_DISK] Dispositivo de Disco terminou LOAD_PAGE para processo 1, página 1
+[INT_DISK] Processo 1 desbloqueado após carga de página
+[CTX] TIMER: preempção após 5 instruções | from pid=2 pc=8
+[CTX] Switch -> pid=1 (fibonacci10) pc=12
+```
+
+### Exemplo de Log com Vitimação de Páginas:
+```
+[PAGE_FAULT] Tratando page fault para processo 2, página 2
+[PAGE_FAULT] Sem frames livres, selecionando vítima...
+[EVICT] Vitimando página 1 do processo 1 (frame 3)
+[EVICT] Salvando página vitimada no disco...
+[DISK] Salvando página 1 do processo 1 (frame 3)
+[DISK] Página salva no disco com endereço 0
+[EVICT] Frame 3 liberado, página salva no disco (addr=0)
+[PAGE_FAULT] Enviando pedido de carga de página ao disco...
+[DISK] Operação de LOAD_PAGE adicionada à fila (processo 2, página 2)
+[PAGE_FAULT] Bloqueando processo 2 até carga completar
+```
 
 ## Comandos do Shell
 
@@ -128,34 +221,55 @@ Finalizando sistema...
 
 ## Testes Automatizados
 
-O arquivo `TesteSistema.java` contém 4 testes principais:
-
+### TesteSistema.java
+Contém 4 testes principais:
 1. **Paginação Básica**: Verifica alocação de páginas e tradução de endereços
 2. **Round-Robin**: Testa alternância entre 3 processos com preempção
 3. **STOP**: Verifica finalização e desalocação de processo
 4. **Funcionamento Contínuo**: Testa execução automática sem comando explícito
 
+### TesteMemoriaVirtual.java (NOVO!)
+Teste completo para Memória Virtual com Disco:
+1. **Lazy Loading**: Verifica que apenas primeira página é carregada
+2. **Page Fault Automático**: Valida detecção e tratamento de page faults
+3. **Vitimação de Páginas**: Testa substituição quando memória cheia
+4. **Salvamento no Disco**: Verifica que páginas vitimadas são salvas
+5. **Carregamento do Disco**: Valida recarga de páginas previamente vitimadas
+6. **Bloqueio Durante IO**: Confirma que processo fica BLOCKED durante operações de disco
+
 ## Arquitetura do Sistema
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    Shell    │    │ Escalonador │    │     CPU     │
-│   Thread    │    │   Thread    │    │   Thread    │
-│             │    │             │    │             │
-│ - Comandos  │    │ - Fila READY│    │ - Execução  │
-│ - new/rm/ps │◄──►│ - Round-Robin│◄──►│ - Timer     │
-│ - dump/exec │    │ - Contexto  │    │ - Tradução  │
-└─────────────┘    └─────────────┘    └─────────────┘
-       │                   │                   │
-       └───────────────────┼───────────────────┘
-                           │
-                    ┌─────────────┐
-                    │     SO      │
-                    │             │
-                    │ - GM Paginado│
-                    │ - GP         │
-                    │ - Tradução   │
-                    └─────────────┘
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│    Shell     │  │  Escalonador │  │     CPU      │  │   IODevice   │
+│   Thread     │  │    Thread    │  │   Thread     │  │   Thread     │
+│              │  │              │  │              │  │              │
+│ - Comandos   │  │ - Fila READY │  │ - Execução   │  │ - IN/OUT     │
+│ - new/rm/ps  │◄►│ - Round-Robin│◄►│ - Timer      │  │ - Console    │
+│ - dump/exec  │  │ - Contexto   │  │ - Tradução   │  │ - DMA        │
+└──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
+       │                   │                │  ▲              │
+       └───────────────────┼────────────────┼──┼──────────────┘
+                           │                │  │
+                           │                ▼  │ interrupções
+                    ┌──────────────────────────┴────┐
+                    │           SO                  │
+                    │                               │
+                    │ - GM Paginado                 │
+                    │ - GP (Estados de Processo)    │
+                    │ - Tradução de Endereços       │
+                    │ - Page Fault Handler          │
+                    └───────────────────────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │      DiskDevice Thread       │
+                    │                              │
+                    │ - SAVE_PAGE (vitimação)      │
+                    │ - LOAD_PAGE (page fault)     │
+                    │ - DMA para Disco             │
+                    │ - Armazenamento de páginas   │
+                    └──────────────────────────────┘
 ```
 
 ## Estrutura de Arquivos
@@ -167,7 +281,9 @@ src/
 ├── TesteSistema.java      # Testes automatizados
 ├── hardware/
 │   ├── CPU.java          # CPU com preempção e tradução
+│   ├── DiskDevice.java   # Dispositivo de disco para paginação (NOVO!)
 │   ├── Hw.java           # Hardware com parâmetros configuráveis
+│   ├── IODevice.java     # Dispositivo de IO Console
 │   ├── Interrupts.java   # Tipos de interrupção incluindo TIMER
 │   ├── Memory.java       # Memória com suporte a paginação
 │   ├── Opcode.java       # Códigos de operação
@@ -177,7 +293,8 @@ src/
 │   ├── Program.java      # Representação de programa
 │   └── Programs.java     # Biblioteca de programas
 ├── software/
-│   ├── InterruptHandling.java # Tratamento de interrupções
+│   ├── InterruptHandling.java # Tratamento de interrupções (IO + Disco)
+│   ├── PageTableEntry.java    # Entrada da tabela de páginas
 │   ├── PCB.java          # Process Control Block
 │   ├── Scheduler.java    # Escalonador Round-Robin
 │   ├── Shell.java        # Interface de comandos
@@ -189,13 +306,38 @@ src/
 
 ## Critérios de Aceitação Implementados
 
+### Trabalho 2a - Sistema Concorrente ✅
+✅ **Thread de IO (Console)**: Processa IN/OUT assincronamente em thread separada  
+✅ **Estados de Processo**: NEW, READY, RUNNING, BLOCKED, TERMINATED  
+✅ **IO Assíncrono**: Processo bloqueia ao fazer IO, CPU executa outros enquanto isso  
+✅ **DMA (Console)**: Dispositivo de IO acessa memória diretamente  
+✅ **Fila de Bloqueados**: Processos aguardando IO ficam em fila separada  
+✅ **Interrupção de IO**: Quando IO termina, processo desbloqueado e volta para READY  
+✅ **Sistema Reativo (Shell)**: Shell em thread separada, aceita comandos continuamente  
+✅ **Thread CPU**: Loop eterno executando instruções, verifica interrupções  
+✅ **Thread Scheduler**: Escalonamento automático em thread separada  
+
+### Trabalho 2b - Memória Virtual ✅
+✅ **Lazy Loading**: Apenas primeira página carregada ao criar processo  
+✅ **Page Fault Automático**: Detecta acesso a página não carregada  
+✅ **Bloqueio Durante Page Fault**: Processo fica BLOCKED até disco carregar página  
+✅ **Dispositivo de Disco**: Thread separada para operações de paginação  
+✅ **Salvamento de Páginas Vitimadas**: Páginas salvas no disco quando memória cheia  
+✅ **Carregamento do Disco**: Páginas previamente vitimadas são recarregadas  
+✅ **Três Estados de Página**: Nunca carregada / Em memória / Salva no disco  
+✅ **Interrupções de Disco**: Processo desbloqueado quando operação de disco termina  
+✅ **DMA para Disco**: Disco acessa memória diretamente para save/load  
+✅ **PageTableEntry Estendida**: Flags valid, modified, lastAccessTime, diskAddress  
+✅ **Política de Vítimas**: FIFO simples para seleção de páginas a vitimar  
+
+### Outros Requisitos ✅
 ✅ GM paginado com aloca/desaloca, carga por página, e tradução obrigatória  
 ✅ GP com PCB, running, fila READY e comandos exigidos  
 ✅ CPU conta instruções e aciona TIMER; InterruptHandling salva/restaura; RR funcionando  
 ✅ STOP finaliza processo, desaloca GM/PCB e escalona outro  
 ✅ execAll e funcionamento contínuo com threads separadas  
 ✅ dump mostra mapeamento lógico↔físico e PCB completo  
-✅ Logs claros de criação, troca de contexto, STOP e faults  
+✅ Logs claros de criação, troca de contexto, STOP, page faults, vitimação e disco  
 
 ## Desenvolvedor
 

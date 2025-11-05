@@ -2,6 +2,10 @@ package menagers;
 
 import hardware.Opcode;
 import hardware.Word;
+import software.PCB;
+import software.PageTableEntry;
+
+import java.util.*;
 
 public class MemoryManager {
     private int memSize;        // tamanho total da memória em palavras
@@ -9,12 +13,26 @@ public class MemoryManager {
     private int frameQuantity;     // número total de frames = memSize / pgSize
     private boolean[] frames;  // vetor que indica se o frame i está ocupado (true) ou livre (false)
     private Word[] pos;
+    
+    // Para política de substituição de páginas
+    private Map<Integer, FrameInfo> frameOwners; // frame -> informações sobre dono
+    
+    public static class FrameInfo {
+        public PCB owner;
+        public int pageNumber;
+        
+        public FrameInfo(PCB owner, int pageNumber) {
+            this.owner = owner;
+            this.pageNumber = pageNumber;
+        }
+    }
 
     public MemoryManager(int memSize, int pgSize) {
         this.memSize = memSize;
         this.pgSize = pgSize;
         this.frameQuantity = memSize / pgSize;
         this.frames = new boolean[frameQuantity];
+        this.frameOwners = new HashMap<>();
         pos = new Word[memSize];
         for (int i = 0; i < memSize; i++) {
             pos[i] = new Word(Opcode.DATA, 0, 0, 0);
@@ -114,5 +132,73 @@ public class MemoryManager {
 
     public boolean[] getFrames() {
         return frames;
+    }
+    
+    /**
+     * Aloca um único frame para uma página específica de um processo
+     */
+    public int allocateFrame(PCB owner, int pageNumber) {
+        // Buscar frame livre
+        for (int i = 0; i < frameQuantity; i++) {
+            if (!frames[i]) {
+                frames[i] = true;
+                frameOwners.put(i, new FrameInfo(owner, pageNumber));
+                return i;
+            }
+        }
+        // Não há frame livre
+        return -1;
+    }
+    
+    /**
+     * Desaloca um frame específico
+     */
+    public void deallocateFrame(int frameIndex) {
+        if (frameIndex >= 0 && frameIndex < frames.length) {
+            frames[frameIndex] = false;
+            frameOwners.remove(frameIndex);
+        }
+    }
+    
+    /**
+     * Escolhe uma vítima usando política FIFO simplificada
+     * Retorna o frame a ser liberado
+     */
+    public int selectVictim() {
+        // Política simples: primeiro frame ocupado (FIFO)
+        for (int i = 0; i < frameQuantity; i++) {
+            if (frames[i]) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    
+    /**
+     * Obtém informações sobre o dono de um frame
+     */
+    public FrameInfo getFrameOwner(int frameIndex) {
+        return frameOwners.get(frameIndex);
+    }
+    
+    /**
+     * Verifica se há frames livres
+     */
+    public boolean hasFreeFrame() {
+        for (boolean frame : frames) {
+            if (!frame) return true;
+        }
+        return false;
+    }
+    
+    /**
+     * Conta frames livres
+     */
+    public int countFreeFrames() {
+        int count = 0;
+        for (boolean frame : frames) {
+            if (!frame) count++;
+        }
+        return count;
     }
 }

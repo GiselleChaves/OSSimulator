@@ -5,6 +5,7 @@ import software.SysCallHandling;
 import software.PCB;
 import software.SO;
 import util.Utilities;
+import hardware.DiskDevice;
 
 public class CPU implements Runnable {
     private int maxInt; // valores maximo e minimo para inteiros nesta cpu
@@ -45,6 +46,12 @@ public class CPU implements Runnable {
 
     // Referência ao PCB corrente (para exec debug e interrupções)
     private PCB currentPCB;
+    
+    // Interrupção pendente de IO
+    private volatile PCB ioInterruptProcess;
+    
+    // Interrupção pendente de Disco
+    private volatile DiskDevice.DiskOperation diskInterruptOperation;
 
     public CPU(Memory _mem, boolean _debug) { // ref a MEMORIA passada na criacao da CPU
         maxInt = 32767;            // capacidade de representacao modelada
@@ -60,6 +67,8 @@ public class CPU implements Runnable {
         active = false;
         preemptive = true;
         currentPCB = null;
+        ioInterruptProcess = null;
+        diskInterruptOperation = null;
     }
 
     public void setSO(SO so) {
@@ -91,6 +100,22 @@ public class CPU implements Runnable {
         cpuStop = false;
         debug = pcb.trace;
         currentPCB = pcb;
+    }
+    
+    /**
+     * Sinaliza interrupção de IO - chamado pela thread de IO
+     */
+    public synchronized void signalIOInterrupt(PCB process) {
+        ioInterruptProcess = process;
+        System.out.println("[CPU] Interrupção de IO sinalizada para processo " + process.pid);
+    }
+    
+    /**
+     * Sinaliza interrupção de Disco - chamado pela thread de Disco
+     */
+    public synchronized void signalDiskInterrupt(DiskDevice.DiskOperation operation) {
+        diskInterruptOperation = operation;
+        System.out.println("[CPU] Interrupção de DISCO sinalizada para processo " + operation.process.pid);
     }
 
     public void saveContext(PCB pcb) {
@@ -283,6 +308,26 @@ public class CPU implements Runnable {
             }
         }
 
+        // VERIFICA INTERRUPÇÃO DE IO (assíncrona)
+        synchronized(this) {
+            if (ioInterruptProcess != null) {
+                PCB procWithIO = ioInterruptProcess;
+                ioInterruptProcess = null;
+                // Trata interrupção de IO com referência ao processo
+                so.ih.handleIO(procWithIO);
+            }
+        }
+        
+        // VERIFICA INTERRUPÇÃO DE DISCO (assíncrona)
+        synchronized(this) {
+            if (diskInterruptOperation != null) {
+                DiskDevice.DiskOperation operation = diskInterruptOperation;
+                diskInterruptOperation = null;
+                // Trata interrupção de Disco com referência à operação
+                so.ih.handleDisk(operation);
+            }
+        }
+        
         // VERIFICA INTERRUPÇÃO
         if (irpt != Interrupts.noInterrupt) {
             ih.handle(irpt);
