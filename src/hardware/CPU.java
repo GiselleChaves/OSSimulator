@@ -79,6 +79,8 @@ public class CPU implements Runnable {
         sysCall = _sysCall;        // aponta para rotinas de tratamento de chamadas de sistema
     }
 
+
+
     public void setUtilities(Utilities _u) {
         u = _u;                     // aponta para rotinas utilitárias - fazer dump da memória na tela
     }

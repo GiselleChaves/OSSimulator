@@ -2,12 +2,16 @@ package software;
 
 import hardware.Hw;
 import hardware.Word;
+import hardware.Disk;
 import menagers.MemoryManager;
 import program.Program;
 import program.Programs;
 import util.Utilities;
 
+
 import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -15,7 +19,13 @@ public class SO {
     public InterruptHandling ih;
     public SysCallHandling sc;
     public Utilities utils;
+
     public Hw hw;
+    private Disk disk;
+
+    // Mapa para armazenar os processos bloqueados aguardando PAGE-IN
+    private Map<Integer, PCB> blockedProcesses;
+
 
     // Gerente de Memória (GM paginado)
     private MemoryManager memoryManager;
@@ -43,6 +53,17 @@ public class SO {
         hw.cpu.setAddressOfHandlers(ih, sc);
         hw.cpu.setSO(this);
         utils = new Utilities(hw);
+        // Disco com 32 slots, latência simulada de 200ms
+        this.disk = new Disk(
+                32,
+                hw.mem.getTamPg(),
+                new DiskCallback(this),
+                200
+        );
+
+
+        this.blockedProcesses = new HashMap<>();
+
 
         // Inicializar GM com parâmetros da memória
         memoryManager = new MemoryManager(hw.mem.getTamMem(), hw.mem.getTamPg());
@@ -389,4 +410,38 @@ public class SO {
     public boolean isGlobalTrace() {
         return globalTrace;
     }
+
+    public Map<Integer, PCB> getBlockedProcesses() {
+        return blockedProcesses;
+    }
+
+    public MemoryManager getMemoryManager() {
+        return memoryManager;
+    }
+
+    /**
+     * Encontra o processo dono de um determinado frame físico.
+     *
+     * @param frameIndex índice do frame físico.
+     * @return o PCB do processo que possui esse frame, ou null se não encontrado.
+     */
+    public PCB findProcessByFrame(int frameIndex) {
+        for (PCB pcb : processTable.values()) {
+            if (pcb.pageTable != null) {
+                for (int frame : pcb.pageTable) {
+                    if (frame == frameIndex) {
+                        return pcb;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    public Disk getDisk() {
+        return disk;
+    }
+
+
+
 }

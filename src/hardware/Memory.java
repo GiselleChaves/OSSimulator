@@ -37,5 +37,24 @@ public class Memory {
         }
         pos[enderecoFisico] = w;
     }
+
+    /**
+     * Lê o conteúdo completo de um frame (página) da memória física.
+     *
+     * @param frameIndex índice do frame que será lido
+     * @return um vetor de Word contendo todas as palavras do frame
+     */
+    public Word[] readFrame(int frameIndex) {
+        int tamPg = getTamPg();
+        int start = frameIndex * tamPg;
+        Word[] page = new Word[tamPg];
+
+        for (int i = 0; i < tamPg; i++) {
+            page[i] = read(start + i);
+        }
+
+        return page;
+    }
+
 }
 

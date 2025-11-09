@@ -21,9 +21,12 @@ public class MemoryManager {
         }
     }
 
-    /*
-    * Allocate frames
-    */
+    /**
+     * Aloca frames de memória para armazenar um processo do tamanho especificado.
+     *
+     * @param wordSize tamanho do processo em palavras.
+     * @return um array com os índices dos frames alocados ou {@code null} se não houver memória suficiente.
+     */
     public int[] allocate(int wordSize) {
         int pgNumber = (int) Math.ceil((double) wordSize / getPgSize());
         int[] pgTable = new int[pgNumber];
@@ -48,9 +51,12 @@ public class MemoryManager {
         return pgTable;
     }
 
-    /*
-    * Deallocate frame
-    */
+    /**
+     * Libera os frames de memória previamente alocados para um processo.
+     *
+     * @param pgTable array com os índices dos frames a serem desalocados.
+     * @return {@code true} se a desalocação foi realizada, ou {@code false} se a tabela for nula ou vazia.
+     */
     public boolean deallocate(int[] pgTable) {
         if (pgTable == null || pgTable.length == 0) return false;
 
@@ -63,9 +69,10 @@ public class MemoryManager {
         return true;
     }
 
-    /*
-    * Show frame status
-    */
+    /**
+     * Exibe no console o estado atual dos frames de memória.
+     * Mostra "1" para frames ocupados e "0" para frames livres.
+     */
     public void showStatus(){
         System.out.println("Frames");
         for(boolean frame:frames) {
@@ -76,6 +83,20 @@ public class MemoryManager {
             }
         }
     }
+
+    /**
+     * Encontra um frame ocupado para ser usado como vítima em substituição.
+     * Estratégia simples: escolhe o primeiro frame ocupado.
+     *
+     * @return índice do frame vítima, ou -1 se nenhum estiver ocupado.
+     */
+    public int findVictimFrame() {
+        for (int i = 0; i < frames.length; i++) {
+            if (frames[i]) return i;
+        }
+        return -1;
+    }
+
 
     /**
      * Escreve uma palavra na memória no endereço especificado
@@ -92,6 +113,7 @@ public class MemoryManager {
         return true;
     }
 
+    /*GETTERS E SETTERS*/
     public int getMemSize() {
         return memSize;
     }
@@ -115,4 +137,20 @@ public class MemoryManager {
     public boolean[] getFrames() {
         return frames;
     }
+
+
+    /**
+     * Procura o primeiro frame livre na memória.
+     *
+     * @return o índice do frame livre, ou -1 se não houver nenhum.
+     */
+    public int findFreeFrame() {
+        for (int i = 0; i < frames.length; i++) {
+            if (!frames[i]) {
+                return i;
+            }
+        }
+        return -1; // nenhum frame livre
+    }
+
 }
