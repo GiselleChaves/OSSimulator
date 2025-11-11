@@ -322,25 +322,7 @@ public class CPU implements Runnable {
             }
         }
 
-        // VERIFICA INTERRUPÇÃO DE IO (assíncrona)
-        synchronized(this) {
-            if (ioInterruptProcess != null) {
-                PCB procWithIO = ioInterruptProcess;
-                ioInterruptProcess = null;
-                // Trata interrupção de IO com referência ao processo
-                so.ih.handleIO(procWithIO);
-            }
-        }
-        
-        // VERIFICA INTERRUPÇÃO DE DISCO (assíncrona)
-        synchronized(this) {
-            if (diskInterruptOperation != null) {
-                DiskDevice.DiskOperation operation = diskInterruptOperation;
-                diskInterruptOperation = null;
-                // Trata interrupção de Disco com referência à operação
-                so.ih.handleDisk(operation);
-            }
-        }
+        processAsyncInterrupts();
         
         // VERIFICA INTERRUPÇÃO
         if (irpt != Interrupts.noInterrupt) {
@@ -358,6 +340,7 @@ public class CPU implements Runnable {
                 currentPCB = current;
                 step();
             } else {
+                processAsyncInterrupts();
                 // Se não há processo rodando, aguarda um pouco
                 try { 
                     Thread.sleep(50); 
@@ -376,4 +359,31 @@ public class CPU implements Runnable {
     public int[] getReg() { return reg; }
     public int getDelta() { return delta; }
     public int getInstructionCount() { return instructionCount; }
+
+    /**
+     * Trata interrupções assíncronas (IO/Disco) mesmo quando a CPU está ociosa.
+     */
+    private void processAsyncInterrupts() {
+        PCB procWithIO = null;
+        synchronized (this) {
+            if (ioInterruptProcess != null) {
+                procWithIO = ioInterruptProcess;
+                ioInterruptProcess = null;
+            }
+        }
+        if (procWithIO != null && so != null && so.ih != null) {
+            so.ih.handleIO(procWithIO);
+        }
+
+        DiskDevice.DiskOperation operation = null;
+        synchronized (this) {
+            if (diskInterruptOperation != null) {
+                operation = diskInterruptOperation;
+                diskInterruptOperation = null;
+            }
+        }
+        if (operation != null && so != null && so.ih != null) {
+            so.ih.handleDisk(operation);
+        }
+    }
 }
