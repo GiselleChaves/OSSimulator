@@ -26,6 +26,7 @@ public class Shell implements Runnable {
         System.out.println("  frames         - Mostrar mapa de frames de memória");
         System.out.println("  exec <pid>     - Executar processo (com preempção)");
         System.out.println("  execAll        - Executar todos os processos");
+        System.out.println("  in <pid> <val> - Responder a pedido de IN do processo");
         System.out.println("  traceOn        - Ativar trace");
         System.out.println("  traceOff       - Desativar trace");
         System.out.println("  help           - Mostrar esta ajuda");
@@ -87,6 +88,9 @@ public class Shell implements Runnable {
                         break;
                     case "execall":
                         handleExecAll();
+                        break;
+                    case "in":
+                        handleIn(parts);
                         break;
                     case "traceon":
                         handleTraceOn();
@@ -235,6 +239,7 @@ public class Shell implements Runnable {
         System.out.println("  frames         - Mostrar mapa de frames de memória");
         System.out.println("  exec <pid>     - Executar processo (com preempção)");
         System.out.println("  execAll        - Executar todos os processos");
+        System.out.println("  in <pid> <val> - Responder a pedido de IN do processo");
         System.out.println("  traceOn        - Ativar trace");
         System.out.println("  traceOff       - Desativar trace");
         System.out.println("  help           - Mostrar esta ajuda");
@@ -259,6 +264,24 @@ public class Shell implements Runnable {
         System.out.println("   so> exec 1");
         System.out.println("   so> execAll");
         System.out.println();
+    }
+
+    private void handleIn(String[] parts) {
+        if (parts.length != 3) {
+            System.out.println("Uso: in <pid> <valor>");
+            return;
+        }
+
+        try {
+            int pid = Integer.parseInt(parts[1]);
+            int value = Integer.parseInt(parts[2]);
+            boolean accepted = so.provideInput(pid, value);
+            if (accepted) {
+                System.out.println(String.format("[Shell] Valor %d enviado ao processo %d", value, pid));
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("PID e valor devem ser números inteiros");
+        }
     }
 
     private void handleExit() {

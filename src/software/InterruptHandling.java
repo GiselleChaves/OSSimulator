@@ -52,7 +52,7 @@ public class InterruptHandling {
 		
 		// Processo estava bloqueado esperando IO, agora pode voltar para READY
 		if (process.state == PCB.ProcState.BLOCKED) {
-			so.scheduler.unblockProcess(process);
+			so.scheduler.unblockProcess(process, "io_complete");
 			System.out.println("[INT_IO] Processo " + process.pid + " desbloqueado e movido para READY");
 		}
 	}
@@ -69,7 +69,7 @@ public class InterruptHandling {
 		if (operation.type == DiskDevice.DiskOpType.LOAD_PAGE) {
 			PCB process = operation.process;
 			if (process.state == PCB.ProcState.BLOCKED) {
-				so.scheduler.unblockProcess(process);
+				so.scheduler.unblockProcess(process, "page_loaded");
 				System.out.println("[INT_DISK] Processo " + process.pid + " desbloqueado após carga de página");
 			}
 		}
@@ -82,8 +82,7 @@ public class InterruptHandling {
 	private void handlePageFault() {
 		PCB running = resolveRunningOrCurrent();
 		if (running != null) {
-			System.out.println("[PAGE_FAULT] Processo " + running.pid + " acessou página não carregada");
-			// Será implementado na fase de memória virtual
+			System.out.println("[PAGE_FAULT] Processo " + running.pid + " sinalizou page fault (tratamento assíncrono em andamento)");
 		}
 	}
 	

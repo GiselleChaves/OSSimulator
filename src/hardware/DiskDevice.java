@@ -196,7 +196,10 @@ public class DiskDevice implements Runnable {
                 // Atualizar tabela de páginas
                 entry.frameNumber = operation.frameNumber;
                 entry.valid = true;
+                entry.modified = false;
                 entry.lastAccessTime = System.currentTimeMillis();
+                
+                so.onPageLoaded(operation.process, operation.pageNumber, operation.frameNumber);
                 
                 System.out.println("[DISK] LOAD_PAGE concluído: página " + operation.pageNumber + 
                                  " do processo " + operation.process.pid + " carregada no frame " + 

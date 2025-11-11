@@ -3,7 +3,6 @@ package menagers;
 import hardware.Opcode;
 import hardware.Word;
 import software.PCB;
-import software.PageTableEntry;
 
 import java.util.*;
 
@@ -12,6 +11,7 @@ public class MemoryManager {
     private int pgSize;         // tamanho da página / frame em palavras
     private int frameQuantity;     // número total de frames = memSize / pgSize
     private boolean[] frames;  // vetor que indica se o frame i está ocupado (true) ou livre (false)
+    private boolean[] frameLocked; // indica frames reservados/indisponíveis (ex. page fault em andamento)
     private Word[] pos;
     
     // Para política de substituição de páginas
@@ -32,6 +32,7 @@ public class MemoryManager {
         this.pgSize = pgSize;
         this.frameQuantity = memSize / pgSize;
         this.frames = new boolean[frameQuantity];
+        this.frameLocked = new boolean[frameQuantity];
         this.frameOwners = new HashMap<>();
         pos = new Word[memSize];
         for (int i = 0; i < memSize; i++) {
@@ -49,8 +50,9 @@ public class MemoryManager {
 
         // Buscar frames livres
         for(int i = 0; i < frameQuantity && count < pgNumber; i++) {
-            if(!frames[i]) {
+            if(!frames[i] && !frameLocked[i]) {
                 frames[i] = true;
+                frameLocked[i] = false;
                 pgTable[count++] = i;
             }
         }
@@ -76,6 +78,7 @@ public class MemoryManager {
             int frameIndex = pgTable[i];
             if (frameIndex >= 0 && frameIndex < frames.length) {
                 frames[frameIndex] = false;
+                frameLocked[frameIndex] = false;
             }
         }
         return true;
@@ -156,6 +159,7 @@ public class MemoryManager {
     public void deallocateFrame(int frameIndex) {
         if (frameIndex >= 0 && frameIndex < frames.length) {
             frames[frameIndex] = false;
+            frameLocked[frameIndex] = false;
             frameOwners.remove(frameIndex);
         }
     }
@@ -167,7 +171,7 @@ public class MemoryManager {
     public int selectVictim() {
         // Política simples: primeiro frame ocupado (FIFO)
         for (int i = 0; i < frameQuantity; i++) {
-            if (frames[i]) {
+            if (frames[i] && !frameLocked[i]) {
                 return i;
             }
         }
@@ -179,6 +183,37 @@ public class MemoryManager {
      */
     public FrameInfo getFrameOwner(int frameIndex) {
         return frameOwners.get(frameIndex);
+    }
+    
+    /**
+     * Atribui (ou reatribui) explicitamente o dono de um frame.
+     * Utilizado durante o tratamento de page-fault para reservar um frame
+     * a uma página que será carregada pelo disco.
+     */
+    public void assignFrame(int frameIndex, PCB owner, int pageNumber) {
+        if (frameIndex < 0 || frameIndex >= frames.length) {
+            throw new IllegalArgumentException("Frame inválido: " + frameIndex);
+        }
+        frames[frameIndex] = true;
+        frameOwners.put(frameIndex, new FrameInfo(owner, pageNumber));
+    }
+    
+    /**
+     * Marca um frame como reservado (não pode ser escolhido como vítima enquanto true).
+     */
+    public void lockFrame(int frameIndex) {
+        if (frameIndex >= 0 && frameIndex < frameLocked.length) {
+            frameLocked[frameIndex] = true;
+        }
+    }
+    
+    /**
+     * Libera a reserva de um frame previamente marcado com lockFrame.
+     */
+    public void unlockFrame(int frameIndex) {
+        if (frameIndex >= 0 && frameIndex < frameLocked.length) {
+            frameLocked[frameIndex] = false;
+        }
     }
     
     /**

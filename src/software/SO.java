@@ -11,6 +11,7 @@ import program.Programs;
 import util.Utilities;
 
 import java.util.*;
+import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -38,6 +39,9 @@ public class SO {
 
     // Programas disponíveis
     private Programs programs;
+
+    // Logger de mudanças de estado
+    private StateLogger stateLogger;
 
     // Controle de trace global
     private boolean globalTrace;
@@ -72,6 +76,9 @@ public class SO {
         // Programas
         programs = new Programs();
 
+        // Logger
+        stateLogger = new StateLogger(Path.of("logs", "so_state.log"));
+
         globalTrace = false;
         lock = new ReentrantLock();
     }
@@ -82,6 +89,24 @@ public class SO {
     
     public DiskDevice getDiskDevice() {
         return diskDevice;
+    }
+
+    public boolean provideInput(int pid, int value) {
+        lock.lock();
+        try {
+            PCB pcb = processTable.get(pid);
+            if (pcb == null) {
+                System.out.println("ERRO: Processo " + pid + " não existe para receber entrada");
+                return false;
+            }
+            boolean accepted = ioDevice.provideInput(pid, value);
+            if (!accepted) {
+                System.out.println("ERRO: Não há operação de IN pendente para o processo " + pid);
+            }
+            return accepted;
+        } finally {
+            lock.unlock();
+        }
     }
 
     // ============== GERENTE DE MEMÓRIA (GM PAGINADO) ==============
@@ -125,159 +150,170 @@ public class SO {
         }
     }
 
-    public int traduzEndereco(PCB pcb, int endLogico) {
-        if (pcb.pageTable == null) {
-            throw new RuntimeException("Processo " + pcb.pid + " não tem tabela de páginas");
+    public int traduzEndereco(PCB pcb, int endLogico, boolean isWrite) {
+        lock.lock();
+        try {
+            if (pcb.pageTable == null) {
+                throw new RuntimeException("Processo " + pcb.pid + " não tem tabela de páginas");
+            }
+
+            int tamPg = hw.mem.getTamPg();
+            int pagina = endLogico / tamPg;
+            int offset = endLogico % tamPg;
+
+            if (pagina >= pcb.pageTable.length) {
+                throw new RuntimeException("Acesso à página " + pagina + " inválida para processo " + pcb.pid);
+            }
+
+            PageTableEntry entry = pcb.pageTable[pagina];
+
+            // PAGE FAULT: página não está em memória
+            if (!entry.valid) {
+                System.out.println("[PAGE_FAULT] Processo " + pcb.pid + " acessou página " + pagina + " não carregada");
+                handlePageFault(pcb, pagina);
+                throw new PageFaultException(pcb.pid, pagina, "Página " + pagina + " não está em memória física");
+            }
+
+            // Atualizar metadados da página
+            entry.lastAccessTime = System.currentTimeMillis();
+            if (isWrite) {
+                entry.modified = true;
+            }
+
+            int frame = entry.frameNumber;
+            if (frame < 0) {
+                throw new RuntimeException("Página " + pagina + " do processo " + pcb.pid + " sem frame associado");
+            }
+            int endFisico = frame * tamPg + offset;
+
+            if (globalTrace || pcb.trace) {
+                System.out.println("Tradução: endLog=" + endLogico + " → pg=" + pagina +
+                        ", offset=" + offset + ", frame=" + frame + " → endFis=" + endFisico);
+            }
+
+            return endFisico;
+        } finally {
+            lock.unlock();
         }
+    }
 
-        int tamPg = hw.mem.getTamPg();
-        int pagina = endLogico / tamPg;
-        int offset = endLogico % tamPg;
-
-        if (pagina >= pcb.pageTable.length) {
-            throw new RuntimeException("Acesso à página " + pagina + " inválida para processo " + pcb.pid);
+    public void logStateChange(PCB pcb, String reason, PCB.ProcState fromState, PCB.ProcState toState) {
+        if (stateLogger != null) {
+            stateLogger.log(pcb, reason, fromState, toState);
         }
+    }
 
-        PageTableEntry entry = pcb.pageTable[pagina];
-        
-        // PAGE FAULT: página não está em memória
-        if (!entry.valid) {
-            System.out.println("[PAGE_FAULT] Processo " + pcb.pid + " acessou página " + pagina + " não carregada");
-            handlePageFault(pcb, pagina);
-            // Após tratamento, entry deve estar válida
+    public StateLogger getStateLogger() {
+        return stateLogger;
+    }
+    
+    /**
+     * Notificação utilizada pelo dispositivo de disco quando uma página é carregada.
+     * Responsável por liberar o frame reservado durante o tratamento do page fault.
+     */
+    public void onPageLoaded(PCB pcb, int pageNumber, int frameNumber) {
+        lock.lock();
+        try {
+            memoryManager.unlockFrame(frameNumber);
+            PageTableEntry entry = pcb.pageTable[pageNumber];
+            if (entry != null) {
+                entry.modified = false;
+                entry.lastAccessTime = System.currentTimeMillis();
+            }
+        } finally {
+            lock.unlock();
         }
-        
-        // Atualizar tempo de acesso (para LRU)
-        entry.lastAccessTime = System.currentTimeMillis();
-        
-        int frame = entry.frameNumber;
-        int endFisico = frame * tamPg + offset;
-
-        if (globalTrace || pcb.trace) {
-            System.out.println("Tradução: endLog=" + endLogico + " → pg=" + pagina +
-                    ", offset=" + offset + ", frame=" + frame + " → endFis=" + endFisico);
-        }
-
-        return endFisico;
     }
     
     /**
      * Tratamento de page fault - ASSÍNCRONO com bloqueio de processo
      */
     private void handlePageFault(PCB pcb, int pageNumber) {
-        System.out.println("[PAGE_FAULT] Tratando page fault para processo " + pcb.pid + ", página " + pageNumber);
-        
-        PageTableEntry entry = pcb.pageTable[pageNumber];
-        
-        // Tentar alocar frame
-        int frame = memoryManager.allocateFrame(pcb, pageNumber);
-        
-        // Se não há frame livre, precisa vitimar uma página (SÍNCRONO - vitimação é rápida)
-        if (frame < 0) {
-            System.out.println("[PAGE_FAULT] Sem frames livres, selecionando vítima...");
-            frame = evictPageSync(pcb);
+        lock.lock();
+        try {
+            PageTableEntry entry = pcb.pageTable[pageNumber];
+            if (entry.valid) {
+                // Outro thread já carregou a página enquanto tratávamos
+                return;
+            }
+
+            System.out.println("[PAGE_FAULT] Tratando page fault para processo " + pcb.pid + ", página " + pageNumber);
+
+            int frame = memoryManager.allocateFrame(pcb, pageNumber);
+            if (frame < 0) {
+                System.out.println("[PAGE_FAULT] Sem frames livres, selecionando vítima...");
+                frame = memoryManager.selectVictim();
+                if (frame < 0) {
+                    throw new RuntimeException("ERRO: Não há frames disponíveis para tratamento de page fault");
+                }
+
+                MemoryManager.FrameInfo info = memoryManager.getFrameOwner(frame);
+                if (info == null || info.owner == null) {
+                    throw new RuntimeException("ERRO: Frame " + frame + " não possui dono registrado");
+                }
+
+                PCB victimPCB = info.owner;
+                int victimPage = info.pageNumber;
+                PageTableEntry victimEntry = victimPCB.pageTable[victimPage];
+
+                System.out.println("[PAGE_FAULT] Vitimando página " + victimPage + " do processo " +
+                        victimPCB.pid + " (frame " + frame + ")");
+
+                // Marca a página como inválida imediatamente para evitar novos acessos
+                victimEntry.valid = false;
+                victimEntry.frameNumber = -1;
+
+                memoryManager.lockFrame(frame);
+
+                DiskDevice.DiskOperation saveOperation = new DiskDevice.DiskOperation(
+                        DiskDevice.DiskOpType.SAVE_PAGE,
+                        victimPCB,
+                        victimPage,
+                        frame,
+                        victimEntry.diskAddress
+                );
+                diskDevice.addOperation(saveOperation);
+            } else {
+                memoryManager.lockFrame(frame);
+            }
+
+            // Reserva o frame durante o carregamento (evita vitimação reentrante)
+            // Reserva o frame (se veio da lista livre, garante metadados; se veio de vitimação, reatribui)
+            memoryManager.assignFrame(frame, pcb, pageNumber);
+
+            // Solicita ao disco o carregamento da página
+            DiskDevice.DiskOperation loadOperation = new DiskDevice.DiskOperation(
+                    DiskDevice.DiskOpType.LOAD_PAGE,
+                    pcb,
+                    pageNumber,
+                    frame,
+                    entry.diskAddress
+            );
+            diskDevice.addOperation(loadOperation);
+
+            // Garante que o processo ficará bloqueado até o fim da operação de disco
+            PCB runningNow = scheduler.getRunning();
+            if (runningNow == pcb) {
+                System.out.println("[PAGE_FAULT] Bloqueando processo " + pcb.pid + " até carga completar");
+                scheduler.blockRunningProcess("page_fault");
+            } else if (pcb.state != PCB.ProcState.BLOCKED) {
+                PCB.ProcState fromState = pcb.state;
+                pcb.state = PCB.ProcState.BLOCKED;
+                logStateChange(pcb, "page_fault", fromState, PCB.ProcState.BLOCKED);
+            }
+        } finally {
+            lock.unlock();
         }
-        
-        if (frame < 0) {
-            throw new RuntimeException("ERRO: Não foi possível alocar frame para page fault");
-        }
-        
-        // ASSÍNCRONO: Envia pedido de carga de página para o disco
-        System.out.println("[PAGE_FAULT] Enviando pedido de carga de página ao disco...");
-        DiskDevice.DiskOperation operation = new DiskDevice.DiskOperation(
-            DiskDevice.DiskOpType.LOAD_PAGE,
-            pcb,
-            pageNumber,
-            frame,
-            entry.diskAddress
-        );
-        
-        diskDevice.addOperation(operation);
-        
-        // BLOQUEAR processo até disco terminar (será desbloqueado na interrupção de disco)
-        System.out.println("[PAGE_FAULT] Bloqueando processo " + pcb.pid + " até carga completar");
-        pcb.state = PCB.ProcState.BLOCKED;
-        scheduler.blockRunningProcess();
-        
         // CPU continuará com outro processo enquanto disco carrega a página
-    }
-    
-    /**
-     * Evita uma página (política de vítimas) - versão SÍNCRONA
-     * Usado durante page fault para liberar frame rapidamente
-     */
-    private int evictPageSync(PCB requestingPCB) {
-        int victimFrame = memoryManager.selectVictim();
-        if (victimFrame < 0) {
-            return -1;
-        }
-        
-        MemoryManager.FrameInfo info = memoryManager.getFrameOwner(victimFrame);
-        if (info == null) {
-            return victimFrame;
-        }
-        
-        PCB victimPCB = info.owner;
-        int victimPage = info.pageNumber;
-        
-        System.out.println("[EVICT] Vitimando página " + victimPage + " do processo " + 
-                         victimPCB.pid + " (frame " + victimFrame + ")");
-        
-        PageTableEntry victimEntry = victimPCB.pageTable[victimPage];
-        
-        // SALVAR página no disco (via DiskDevice)
-        // Salvamento é síncrono aqui para simplificar (na prática seria assíncrono também)
-        System.out.println("[EVICT] Salvando página vitimada no disco...");
-        int diskAddr = diskDevice.savePage(victimPCB, victimPage, victimFrame);
-        
-        // Atualizar entrada da tabela de páginas da vítima
-        victimEntry.valid = false;
-        victimEntry.frameNumber = -1;
-        victimEntry.diskAddress = diskAddr;
-        victimEntry.modified = false; // Página foi salva, não está mais modificada
-        
-        // Liberar frame
-        memoryManager.deallocateFrame(victimFrame);
-        
-        System.out.println("[EVICT] Frame " + victimFrame + " liberado, página salva no disco (addr=" + diskAddr + ")");
-        
-        return victimFrame;
     }
 
     // Carregamento de programa - agora carrega apenas primeira página
     public void carregaPrograma(Program programa, PCB pcb) {
-        Word[] programImage = programa.image;
-        int tamPg = hw.mem.getTamPg();
-        
         // Carregar apenas primeira página (lazy loading)
-        int endLogIni = 0;
-        int endLogFim = Math.min(tamPg - 1, programImage.length - 1);
-        
         carregaPagina(pcb, 0, pcb.pageTable[0].frameNumber, programa);
         
         System.out.println("Programa '" + programa.name + "' - primeira página carregada para processo " + pcb.pid);
         System.out.println("  Demais páginas serão carregadas sob demanda");
-    }
-    
-    /**
-     * Carrega uma página específica do programa na memória
-     */
-    private void carregaPagina(PCB pcb, int pageNumber, int frameNumber) {
-        // Buscar programa original
-        Program programa = null;
-        for (Program p : programs.progs) {
-            if (p != null && p.name.equals(pcb.nome)) {
-                programa = p;
-                break;
-            }
-        }
-        
-        if (programa == null) {
-            System.out.println("ERRO: Programa '" + pcb.nome + "' não encontrado");
-            return;
-        }
-        
-        carregaPagina(pcb, pageNumber, frameNumber, programa);
     }
     
     /**
@@ -378,7 +414,7 @@ public class SO {
             processTable.put(pid, pcb);
 
             // Colocar na fila READY (mas não executar automaticamente)
-            scheduler.addToReady(pcb);
+            scheduler.addToReady(pcb, "creation");
 
             System.out.println("Processo criado: pid=" + pid + ", nome=" + nomeProg +
                     ", tamanho=" + requiredWords + " palavras (image=" + programa.image.length + ")");
@@ -400,6 +436,10 @@ public class SO {
 
             // Remover do escalonador
             scheduler.removeProcess(pid);
+
+            PCB.ProcState from = pcb.state;
+            pcb.state = PCB.ProcState.TERMINATED;
+            logStateChange(pcb, "manual_remove", from, PCB.ProcState.TERMINATED);
 
             // Desalocar memória
             gmDesaloca(pcb);
@@ -498,51 +538,21 @@ public class SO {
                 return;
             }
 
-            System.out.println("Executando processo " + pid);
-
-            // Remover do escalonador se estiver lá
-            scheduler.removeProcess(pid);
-
-            // Execução normal: com preempção
-            hw.cpu.setPreemptive(true);
-            hw.cpu.setContext(pcb);
-            pcb.state = PCB.ProcState.RUNNING;
-
-            // Execução até terminar ou dar erro
-            int maxSteps = 1000; // Limite para evitar loop infinito
-            int steps = 0;
-
-            while (pcb.state == PCB.ProcState.RUNNING && steps < maxSteps) {
-                hw.cpu.step();
-                hw.cpu.saveContext(pcb);
-                steps++;
-
-                // Verificar se processo terminou por STOP ou erro
-                if (pcb.state == PCB.ProcState.TERMINATED) {
-                    break;
-                }
-
-                // Pequena pausa para evitar loop muito rápido
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-
-            if (steps >= maxSteps) {
-                System.out.println("AVISO: Execução interrompida após " + maxSteps + " passos");
-            }
-
-            System.out.println("Execução do processo " + pid + " finalizada (estado: " + pcb.state + ")");
-            
-            // Se o processo terminou, removê-lo
-            if (pcb.state == PCB.ProcState.TERMINATED) {
-                rm(pid);
-            } else {
-                // Se não terminou, colocar de volta na fila READY
-                scheduler.addToReady(pcb);
+            switch (pcb.state) {
+                case TERMINATED:
+                    System.out.println("Processo " + pid + " já foi finalizado");
+                    return;
+                case BLOCKED:
+                    System.out.println("Processo " + pid + " está bloqueado aguardando IO/Disk");
+                    return;
+                case RUNNING:
+                    System.out.println("Processo " + pid + " já está em execução");
+                    return;
+                default:
+                    // NEW ou READY - garantir que está na fila de prontos
+                    scheduler.addToReady(pcb, "manual_exec");
+                    scheduler.wakeUp();
+                    System.out.println("Processo " + pid + " sinalizado para execução pelo escalonador");
             }
         } finally {
             lock.unlock();
@@ -550,24 +560,30 @@ public class SO {
     }
 
     public void execAll() {
-        System.out.println("Iniciando execução escalonada de todos os processos...");
-
-        // Ativar escalonamento automático
+        System.out.println("Escalonador em execução automática. Aguardando processos finalizarem...");
         scheduler.setAutoSchedule(true);
+        scheduler.wakeUp();
 
-        // Aguardar até todos os processos terminarem
-        while (scheduler.hasReadyProcesses()) {
+        boolean finished = false;
+        while (!finished) {
+            lock.lock();
             try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
+                finished = processTable.isEmpty();
+            } finally {
+                lock.unlock();
+            }
+
+            if (!finished) {
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         }
 
-        // Desativar escalonamento automático
-        scheduler.setAutoSchedule(false);
-        System.out.println("Todos os processos finalizaram");
+        System.out.println("Nenhum processo restante no sistema");
     }
 
     // ============== CONTROLE DE CONTEXTO ==============

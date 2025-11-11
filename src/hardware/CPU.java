@@ -4,8 +4,8 @@ import software.InterruptHandling;
 import software.SysCallHandling;
 import software.PCB;
 import software.SO;
+import software.PageFaultException;
 import util.Utilities;
-import hardware.DiskDevice;
 
 public class CPU implements Runnable {
     private int maxInt; // valores maximo e minimo para inteiros nesta cpu
@@ -141,11 +141,11 @@ public class CPU implements Runnable {
     }
 
     // Tradução de endereço lógico para físico via SO
-    private int translateAddress(int logicalAddr) {
+    private int translateAddress(int logicalAddr, boolean isWrite) {
         if (so != null) {
             PCB pcbForAccess = (so.scheduler.getRunning() != null) ? so.scheduler.getRunning() : currentPCB;
             if (pcbForAccess != null) {
-                return so.traduzEndereco(pcbForAccess, logicalAddr);
+                return so.traduzEndereco(pcbForAccess, logicalAddr, isWrite);
             }
         }
         return logicalAddr; // Fallback para compatibilidade (não deve ocorrer)
@@ -155,7 +155,10 @@ public class CPU implements Runnable {
     private Word readMemory(int logicalAddr) {
         int physicalAddr;
         try {
-            physicalAddr = translateAddress(logicalAddr);
+            physicalAddr = translateAddress(logicalAddr, false);
+        } catch (PageFaultException e) {
+            irpt = Interrupts.intPageFault;
+            return new Word(Opcode.___, -1, -1, -1);
         } catch (RuntimeException e) {
             irpt = Interrupts.intEnderecoInvalido;
             return new Word(Opcode.___, -1, -1, -1);
@@ -170,7 +173,10 @@ public class CPU implements Runnable {
     private void writeMemory(int logicalAddr, Word word) {
         int physicalAddr;
         try {
-            physicalAddr = translateAddress(logicalAddr);
+            physicalAddr = translateAddress(logicalAddr, true);
+        } catch (PageFaultException e) {
+            irpt = Interrupts.intPageFault;
+            return;
         } catch (RuntimeException e) {
             irpt = Interrupts.intEnderecoInvalido;
             return;
@@ -292,7 +298,15 @@ public class CPU implements Runnable {
             case DATA:
                 irpt = Interrupts.intInstrucaoInvalida; break;
             case SYSCALL:
-                sysCall.handle(); pc++; break;
+                try {
+                    boolean completed = sysCall.handle();
+                    if (completed && irpt == Interrupts.noInterrupt) {
+                        pc++;
+                    }
+                } catch (PageFaultException e) {
+                    irpt = Interrupts.intPageFault;
+                }
+                break;
             case STOP:
                 irpt = Interrupts.intSysCallStop; break;
             default:

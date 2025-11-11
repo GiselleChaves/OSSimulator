@@ -24,20 +24,42 @@ public class Scheduler implements Runnable {
         this.lock = new ReentrantLock();
         this.hasWork = lock.newCondition();
         this.active = true;
-        this.autoSchedule = false; // Por padrão, não executa automaticamente
+        this.autoSchedule = true; // Escalonamento automático habilitado por padrão
     }
     
-    public void addToReady(PCB pcb) {
+    private boolean isRunningProcess(PCB pcb) {
+        return running != null && running.pid == pcb.pid;
+    }
+
+    private boolean isInReadyQueue(PCB pcb) {
+        return readyQueue.contains(pcb);
+    }
+
+    private void enqueueReadyIfNeeded(PCB pcb) {
+        if (!isInReadyQueue(pcb) && !isRunningProcess(pcb)) {
+            readyQueue.offer(pcb);
+        }
+    }
+
+    private void moveProcessToReady(PCB pcb, String reason) {
+        if (pcb == null || pcb.state == PCB.ProcState.TERMINATED) {
+            return;
+        }
+        PCB.ProcState from = pcb.state;
+        boolean alreadyQueued = isInReadyQueue(pcb);
+        enqueueReadyIfNeeded(pcb);
+        pcb.state = PCB.ProcState.READY;
+        if (!alreadyQueued) {
+            System.out.println("Processo " + pcb.pid + " (" + pcb.nome + ") adicionado à fila READY");
+        }
+        so.logStateChange(pcb, reason, from, PCB.ProcState.READY);
+    }
+
+    public void addToReady(PCB pcb, String reason) {
         lock.lock();
         try {
-            pcb.state = PCB.ProcState.READY;
-            readyQueue.offer(pcb);
-            System.out.println("Processo " + pcb.pid + " (" + pcb.nome + ") adicionado à fila READY");
-            
-            // Só sinaliza se autoSchedule estiver ativo
-            if (autoSchedule) {
-                hasWork.signal();
-            }
+            moveProcessToReady(pcb, reason);
+            hasWork.signal();
         } finally {
             lock.unlock();
         }
@@ -53,9 +75,7 @@ public class Scheduler implements Runnable {
                 System.out.println(String.format("[CTX] TIMER: preempção após %d instruções | from pid=%d pc=%d", delta, prevPid, prevPc));
                 // Salvar contexto
                 so.hw.cpu.saveContext(running);
-                // Colocar de volta na fila READY
-                running.state = PCB.ProcState.READY;
-                readyQueue.offer(running);
+                moveProcessToReady(running, "timer");
                 running = null;
                 hasWork.signal(); // Sinaliza para escalonar próximo
             }
@@ -67,31 +87,38 @@ public class Scheduler implements Runnable {
     public void scheduleNext() {
         lock.lock();
         try {
-            if (running == null && !readyQueue.isEmpty()) {
-                PCB next = readyQueue.poll();
-                if (next != null) {
-                    int nextPid = next.pid;
-                    running = next;
-                    running.state = PCB.ProcState.RUNNING;
-                    so.hw.cpu.setContext(running);
-                    System.out.println(String.format("[CTX] Switch -> pid=%d (%s) pc=%d", nextPid, running.nome, running.pc));
-                }
-            }
+            scheduleNextLocked();
         } finally {
             lock.unlock();
+        }
+    }
+    
+    private void scheduleNextLocked() {
+        if (running == null && !readyQueue.isEmpty()) {
+            PCB next = readyQueue.poll();
+            if (next != null) {
+                PCB.ProcState from = next.state;
+                running = next;
+                running.state = PCB.ProcState.RUNNING;
+                so.hw.cpu.setContext(running);
+                so.logStateChange(running, "dispatch", from, PCB.ProcState.RUNNING);
+                System.out.println(String.format("[CTX] Switch -> pid=%d (%s) pc=%d", next.pid, running.nome, running.pc));
+            }
         }
     }
     
     /**
      * Bloqueia o processo em execução (para aguardar IO)
      */
-    public void blockRunningProcess() {
+    public void blockRunningProcess(String reason) {
         lock.lock();
         try {
             if (running != null) {
                 System.out.println("[SCHEDULER] Bloqueando processo " + running.pid);
                 so.hw.cpu.saveContext(running);
+                PCB.ProcState from = running.state;
                 running.state = PCB.ProcState.BLOCKED;
+                so.logStateChange(running, reason, from, PCB.ProcState.BLOCKED);
                 blockedQueue.offer(running);
                 running = null;
                 
@@ -108,20 +135,15 @@ public class Scheduler implements Runnable {
     /**
      * Desbloqueia processo e coloca de volta na fila READY
      */
-    public void unblockProcess(PCB pcb) {
+    public void unblockProcess(PCB pcb, String reason) {
         lock.lock();
         try {
             // Remove da fila de bloqueados
             blockedQueue.remove(pcb);
             
-            // Coloca na fila READY
-            pcb.state = PCB.ProcState.READY;
-            readyQueue.offer(pcb);
-            System.out.println("[SCHEDULER] Processo " + pcb.pid + " desbloqueado e adicionado à fila READY");
+            moveProcessToReady(pcb, reason);
             
-            if (autoSchedule) {
-                hasWork.signal();
-            }
+            hasWork.signal();
         } finally {
             lock.unlock();
         }
@@ -169,8 +191,10 @@ public class Scheduler implements Runnable {
         lock.lock();
         try {
             this.autoSchedule = autoSchedule;
-            if (autoSchedule && hasReadyProcesses()) {
+            if (autoSchedule && (running == null) && !readyQueue.isEmpty()) {
                 hasWork.signal();
+            } else if (autoSchedule) {
+                hasWork.signalAll();
             }
         } finally {
             lock.unlock();
@@ -186,21 +210,13 @@ public class Scheduler implements Runnable {
         while (active) {
             lock.lock();
             try {
-                // Só aguarda sinal se autoSchedule estiver ativo
-                if (autoSchedule) {
-                    while (readyQueue.isEmpty() && active) {
-                        hasWork.await();
-                    }
-                    
-                    if (!active) break;
-                    
-                    // Escalona próximo processo se não há nenhum rodando
-                    scheduleNext();
-                } else {
-                    // Se não está em autoSchedule, apenas aguarda um pouco
-                    hasWork.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                while (active && (!autoSchedule || running != null || readyQueue.isEmpty())) {
+                    hasWork.await();
                 }
                 
+                if (!active) break;
+                
+                scheduleNextLocked();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -214,6 +230,15 @@ public class Scheduler implements Runnable {
         lock.lock();
         try {
             active = false;
+            hasWork.signalAll();
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    public void wakeUp() {
+        lock.lock();
+        try {
             hasWork.signalAll();
         } finally {
             lock.unlock();
