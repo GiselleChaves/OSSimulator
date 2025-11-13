@@ -1,4 +1,4 @@
-package menagers;
+package managers;
 
 import hardware.Opcode;
 import hardware.Word;
@@ -42,7 +42,6 @@ public class MemoryManager {
 
     /*
     * Allocate frames
-    */
     public int[] allocate(int wordSize) {
         int pgNumber = (int) Math.ceil((double) wordSize / getPgSize());
         int[] pgTable = new int[pgNumber];
@@ -67,6 +66,7 @@ public class MemoryManager {
         }
         return pgTable;
     }
+    */
 
     /*
     * Deallocate frame
@@ -109,7 +109,7 @@ public class MemoryManager {
             System.out.println("Erro: endereço inválido na memória: " + endereco);
             return false;
         }
-        pos[endereco] = new Word(Opcode.DATA, 0, 0, valor);
+        //pos[endereco] = new Word(Opcode.DATA, 0, 0, valor);
         return true;
     }
 

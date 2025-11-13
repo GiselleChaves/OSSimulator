@@ -2,10 +2,10 @@ package software;
 
 import hardware.Hw;
 import hardware.Word;
+import managers.MemoryManager;
 import hardware.Opcode;
 import hardware.IODevice;
 import hardware.DiskDevice;
-import menagers.MemoryManager;
 import program.Program;
 import program.Programs;
 import util.Utilities;
@@ -56,6 +56,7 @@ public class SO {
         hw.cpu.setAddressOfHandlers(ih, sc);
         hw.cpu.setSO(this);
         utils = new Utilities(hw);
+        hw.cpu.setUtilities(utils);
         
         // Inicializar dispositivo de IO
         ioDevice = new IODevice(this);
@@ -166,11 +167,13 @@ public class SO {
             }
 
             PageTableEntry entry = pcb.pageTable[pagina];
-
             // PAGE FAULT: página não está em memória
             if (!entry.valid) {
+                if (entry.loading) {
+                    throw new PageFaultException(pcb.pid, pagina, "Página " + pagina + " está carregando (in-flight)");
+                }
                 System.out.println("[PAGE_FAULT] Processo " + pcb.pid + " acessou página " + pagina + " não carregada");
-                handlePageFault(pcb, pagina);
+                handlePageFault(pcb, pagina);  // vai marcar loading=true
                 throw new PageFaultException(pcb.pid, pagina, "Página " + pagina + " não está em memória física");
             }
 
@@ -206,6 +209,24 @@ public class SO {
     public StateLogger getStateLogger() {
         return stateLogger;
     }
+
+    public void terminateRunning(String reason) {
+        lock.lock();
+        try {
+            PCB running = scheduler.getRunning();
+            if (running == null) return;
+            if (running.state == PCB.ProcState.TERMINATED) return;
+            // Usa a própria rm para centralizar desalocação/remoção
+
+            int r0 = running.reg != null && running.reg.length > 0 ? running.reg[0] : 0;
+            System.out.println("[OUT] pid=" + running.pid + " ("+ running.nome +") r0=" + r0);
+
+            rm(running.pid);
+            scheduler.scheduleNext();
+        } finally {
+            lock.unlock();
+        }
+    }
     
     /**
      * Notificação utilizada pelo dispositivo de disco quando uma página é carregada.
@@ -217,6 +238,7 @@ public class SO {
             memoryManager.unlockFrame(frameNumber);
             PageTableEntry entry = pcb.pageTable[pageNumber];
             if (entry != null) {
+                entry.loading = false;
                 entry.modified = false;
                 entry.lastAccessTime = System.currentTimeMillis();
             }
@@ -234,6 +256,10 @@ public class SO {
             PageTableEntry entry = pcb.pageTable[pageNumber];
             if (entry.valid) {
                 // Outro thread já carregou a página enquanto tratávamos
+                return;
+            }
+
+            if (entry.loading) {
                 return;
             }
 
@@ -279,7 +305,11 @@ public class SO {
 
             // Reserva o frame durante o carregamento (evita vitimação reentrante)
             // Reserva o frame (se veio da lista livre, garante metadados; se veio de vitimação, reatribui)
+            memoryManager.lockFrame(frame);
             memoryManager.assignFrame(frame, pcb, pageNumber);
+
+            entry.loading = true;
+            entry.frameNumber = frame;
 
             // Solicita ao disco o carregamento da página
             DiskDevice.DiskOperation loadOperation = new DiskDevice.DiskOperation(

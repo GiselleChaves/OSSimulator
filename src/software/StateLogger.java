@@ -5,18 +5,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Locale;
-
 /**
  * Responsável por registrar mudanças de estado dos processos em um arquivo de log conforme
  * solicitado no enunciado das fases T2a/T2b.
  */
 public class StateLogger {
     private final Path logPath;
-    private final SimpleDateFormat timestampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault());
-
+    
     public StateLogger(Path logPath) {
         try {
             Files.createDirectories(logPath.getParent());
@@ -29,21 +25,47 @@ public class StateLogger {
         this.logPath = logPath;
     }
 
+    private String translateState(PCB.ProcState s) {
+        if (s == null) return "nulo";
+        switch (s) {
+            case READY: return "pronto";
+            case RUNNING: return "rodando";
+            case BLOCKED: return "bloq";
+            case TERMINATED: return "terminado";
+            default: return s.toString().toLowerCase(Locale.ROOT);
+        }
+    }
+    
+    private String translateReason(String r) {
+        if (r == null) return "-";
+        switch (r) {
+            case "creation":     return "criacao";
+            case "dispatch":     return "escalona";
+            case "page_fault":   return "pg fault";
+            case "page_loaded":  return "fim pg fault";
+            case "timer":        return "fatia tempo.";
+            case "io_request":   return "io begin";
+            case "io_complete":  return "fim io";
+            default:             return r;
+        }
+    }
+
     public void log(PCB pcb, String reason, PCB.ProcState from, PCB.ProcState to) {
         if (pcb == null) {
             return;
         }
 
-        String timestamp = timestampFormat.format(new Date());
+        if (from != null && to != null && from == to) {
+            return;
+        }
+
         StringBuilder sb = new StringBuilder();
-        sb.append(timestamp).append(" ; ");
         sb.append(pcb.pid).append(" ; ");
         sb.append(pcb.nome != null ? pcb.nome : "desconhecido").append(" ; ");
-        sb.append(reason != null ? reason : "-").append(" ; ");
-        sb.append(from != null ? from : "NULL").append(" ; ");
-        sb.append(to != null ? to : "NULL").append(" ; ");
+        sb.append(translateReason(reason)).append(" ; ");
+        sb.append(translateState(from)).append(" ; ");
+        sb.append(translateState(to)).append(" ; ");
         sb.append(formatPageTable(pcb));
-
         String line = sb.toString();
 
         try {

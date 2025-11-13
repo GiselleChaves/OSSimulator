@@ -23,12 +23,12 @@ public class Shell implements Runnable {
         System.out.println("  ps             - Listar processos");
         System.out.println("  dump <pid>     - Dump de processo");
         System.out.println("  dumpM <i> <f>  - Dump da memória física");
-        //System.out.println("  frames         - Mostrar mapa de frames de memória");
-        //System.out.println("  exec <pid>     - Executar processo (com preempção)");
-        //System.out.println("  execAll        - Executar todos os processos");
+        System.out.println("  frames         - Mostrar mapa de frames de memória");
+        System.out.println("  exec <pid>     - Executar processo (com preempção)");
+        System.out.println("  execAll        - Executar todos os processos");
         System.out.println("  in <pid> <val> - Responder a pedido de IN do processo");
-        //System.out.println("  traceOn        - Ativar trace");
-        //System.out.println("  traceOff       - Desativar trace");
+        System.out.println("  traceOn        - Ativar trace");
+        System.out.println("  traceOff       - Desativar trace");
         System.out.println("  help           - Mostrar esta ajuda");
         System.out.println("  exit           - Sair do sistema");
         System.out.println();
@@ -41,15 +41,15 @@ public class Shell implements Runnable {
         System.out.println("  • PC           - Bubble sort (ordenação)");
         System.out.println("  • PB           - Programa com condicionais");
         System.out.println("  • progMinimo   - Programa mínimo para teste");
-        //System.out.println("  • soma         - Programa simples de soma");
-        //System.out.println("  • loop         - Loop infinito para testes");
+        System.out.println("  • soma         - Programa simples de soma");
+        System.out.println("  • loop         - Loop infinito para testes");
         System.out.println();
         System.out.println("💡 Exemplos de uso:");
         System.out.println("   so> new fatorial");
         System.out.println("   so> new fibonacciREAD");
         System.out.println("   so> ps");
-        //System.out.println("   so> exec 1");
-        //System.out.println("   so> execAll");
+        System.out.println("   so> exec 1");
+        System.out.println("   so> execAll");
         System.out.println();
 
         while (active) {
@@ -236,12 +236,12 @@ public class Shell implements Runnable {
         System.out.println("  ps             - Listar processos");
         System.out.println("  dump <pid>     - Dump de processo");
         System.out.println("  dumpM <i> <f>  - Dump da memória física");
-        //System.out.println("  frames         - Mostrar mapa de frames de memória");
-        //System.out.println("  exec <pid>     - Executar processo (com preempção)");
-        //System.out.println("  execAll        - Executar todos os processos");
+        System.out.println("  frames         - Mostrar mapa de frames de memória");
+        System.out.println("  exec <pid>     - Executar processo (com preempção)");
+        System.out.println("  execAll        - Executar todos os processos");
         System.out.println("  in <pid> <val> - Responder a pedido de IN do processo");
-        //System.out.println("  traceOn        - Ativar trace");
-        //System.out.println("  traceOff       - Desativar trace");
+        System.out.println("  traceOn        - Ativar trace");
+        System.out.println("  traceOff       - Desativar trace");
         System.out.println("  help           - Mostrar esta ajuda");
         System.out.println("  exit           - Sair do sistema");
         System.out.println();
@@ -261,8 +261,8 @@ public class Shell implements Runnable {
         System.out.println("   so> new fatorial");
         System.out.println("   so> new fibonacciREAD");
         System.out.println("   so> ps");
-        //System.out.println("   so> exec 1");
-        //System.out.println("   so> execAll");
+        System.out.println("   so> exec 1");
+        System.out.println("   so> execAll");
         System.out.println();
     }
 

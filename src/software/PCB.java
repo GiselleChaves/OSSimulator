@@ -1,5 +1,8 @@
 package software;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class PCB {
     public PCB(int pid, int inicio, int fim, String programName) {
         this.pid = pid;
@@ -29,6 +32,13 @@ public class PCB {
     public int inicio;
     public int fim;
     public String programName;
+
+    public boolean ioPending = false;
+    public boolean ioCompleted = false;
+    public int ioTypeCode = 0;
+    public int ioLogicalAddr = -1;
+
+    public Set<String> blockReasons = new HashSet<>();
     
     // Estado do processo
     public ProcState state;

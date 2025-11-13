@@ -7,7 +7,7 @@ public class Programs {
 
 	public Word[] retrieveProgram(String pname) {
 		for (Program p : progs) {
-			if (p != null & p.name == pname)
+			if (p != null && p.name.equals(pname))
 				return p.image;
 		}
 		return null;
@@ -311,7 +311,8 @@ public class Programs {
 							// Loop infinito para testes de preempção
 							new Word(Opcode.LDI, 0, -1, 0),  // r0 = 0 (contador)
 							new Word(Opcode.LDI, 1, -1, 1),  // r1 = 1 (incremento)
-							new Word(Opcode.ADD, 0, 0, -1),  // r0 = r0 + r1 (incrementa contador)
+							new Word(Opcode.ADD, 0, 1, -1),  // r0 = r0 + r1 (incrementa contador)
+							//new Word(Opcode.ADD, 0, 0, -1),  // r0 = r0 + r1 (incrementa contador)
 							new Word(Opcode.JMP, -1, -1, 2), // volta para incremento (loop infinito)
 							new Word(Opcode.STOP, -1, -1, -1) // nunca será executado
 					})

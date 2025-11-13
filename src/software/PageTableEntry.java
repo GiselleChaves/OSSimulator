@@ -9,6 +9,7 @@ public class PageTableEntry {
     public boolean modified;      // true se página foi modificada (dirty bit)
     public int diskAddress;       // Endereço no disco onde página está salva (-1 se nunca foi vitimada)
     public long lastAccessTime;   // Para política de substituição (LRU)
+    public boolean loading;
     
     public PageTableEntry() {
         this.frameNumber = -1;
@@ -16,6 +17,7 @@ public class PageTableEntry {
         this.modified = false;
         this.diskAddress = -1;
         this.lastAccessTime = 0;
+        this.loading = false;
     }
     
     public PageTableEntry(int frameNumber) {
@@ -31,9 +33,9 @@ public class PageTableEntry {
         if (valid) {
             return String.format("frame=%d, valid=true, modified=%b", frameNumber, modified);
         } else if (diskAddress >= 0) {
-            return String.format("disk=%d, valid=false", diskAddress);
+            return String.format("disk=%d, valid=false", diskAddress, loading ? ", loading=true" : "");
         } else {
-            return "not_loaded";
+            return loading ? "not_loaded, loading=true" : "not_loaded";
         }
     }
 }

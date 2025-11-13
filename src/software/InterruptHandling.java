@@ -49,6 +49,8 @@ public class InterruptHandling {
 	 */
 	public void handleIO(PCB process) {
 		System.out.println("[INT_IO] Dispositivo de IO terminou operação para processo " + process.pid);
+
+		process.ioCompleted = true;
 		
 		// Processo estava bloqueado esperando IO, agora pode voltar para READY
 		if (process.state == PCB.ProcState.BLOCKED) {
@@ -62,8 +64,7 @@ public class InterruptHandling {
 	 * Chamado quando dispositivo de Disco termina operação de paginação
 	 */
 	public void handleDisk(DiskDevice.DiskOperation operation) {
-		System.out.println("[INT_DISK] Dispositivo de Disco terminou " + operation.type + 
-		                   " para processo " + operation.process.pid + ", página " + operation.pageNumber);
+		System.out.println("[INT_DISK] Dispositivo de Disco terminou " + operation.type + " para processo " + operation.process.pid + ", página " + operation.pageNumber);
 		
 		// Se foi uma operação de LOAD_PAGE, o processo pode ser desbloqueado
 		if (operation.type == DiskDevice.DiskOpType.LOAD_PAGE) {
@@ -73,7 +74,13 @@ public class InterruptHandling {
 				System.out.println("[INT_DISK] Processo " + process.pid + " desbloqueado após carga de página");
 			}
 		}
-		// Se foi SAVE_PAGE, nenhuma ação adicional necessária (página já foi invalidada)
+		
+		if (operation.type == DiskDevice.DiskOpType.SAVE_PAGE) {
+			System.out.println("[INT_DISK] SAVE_PAGE concluído para pid " 
+				+ operation.process.pid + ", pg " + operation.pageNumber 
+				+ " (frame " + operation.frameNumber + ")");
+			// sem unblock aqui; o desbloqueio ocorre ao término do LOAD_PAGE
+		}
 	}
 	
 	/**
@@ -100,13 +107,7 @@ public class InterruptHandling {
 	}
 	
 	private void handleSysCallStop() {
-		PCB running = resolveRunningOrCurrent();
-		if (running != null) {
-			System.out.println("STOP: Processo " + running.pid + " solicitou finalização");
-			running.state = PCB.ProcState.TERMINATED;
-			so.rm(running.pid);
-			so.scheduler.scheduleNext();
-		}
+		so.terminateRunning("int_syscall_stop");
 	}
 	
 	private void handleMemoryViolation() {

@@ -114,12 +114,16 @@ public class Scheduler implements Runnable {
         lock.lock();
         try {
             if (running != null) {
-                System.out.println("[SCHEDULER] Bloqueando processo " + running.pid);
+                System.out.println("[SCHEDULER] Bloqueando processo " + running.pid + " por " + reason);
                 so.hw.cpu.saveContext(running);
-                PCB.ProcState from = running.state;
-                running.state = PCB.ProcState.BLOCKED;
-                so.logStateChange(running, reason, from, PCB.ProcState.BLOCKED);
-                blockedQueue.offer(running);
+
+                running.blockReasons.add(reason);
+                if (running.state != PCB.ProcState.BLOCKED) {
+                    PCB.ProcState from = running.state;
+                    running.state = PCB.ProcState.BLOCKED;
+                    so.logStateChange(running, reason, from, PCB.ProcState.BLOCKED);
+                    blockedQueue.offer(running);
+                }
                 running = null;
                 
                 // Escalona próximo processo
@@ -138,12 +142,14 @@ public class Scheduler implements Runnable {
     public void unblockProcess(PCB pcb, String reason) {
         lock.lock();
         try {
-            // Remove da fila de bloqueados
-            blockedQueue.remove(pcb);
-            
-            moveProcessToReady(pcb, reason);
-            
-            hasWork.signal();
+            pcb.blockReasons.remove(reason);
+
+            if (pcb.blockReasons.isEmpty() && pcb.state == PCB.ProcState.BLOCKED) {
+                blockedQueue.remove(pcb);
+                moveProcessToReady(pcb, "unblock " + reason);
+                hasWork.signal();
+            } else {
+            }
         } finally {
             lock.unlock();
         }
