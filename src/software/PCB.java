@@ -38,6 +38,9 @@ public class PCB {
     public int ioTypeCode = 0;
     public int ioLogicalAddr = -1;
 
+    public boolean terminating = false;
+    public String terminationReason = null;
+
     public Set<String> blockReasons = new HashSet<>();
     
     // Estado do processo

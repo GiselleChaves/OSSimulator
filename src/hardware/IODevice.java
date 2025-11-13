@@ -26,23 +26,35 @@ public class IODevice implements Runnable {
         public final IOType type;
         public final PCB process;
         public final int address; // Endereço lógico para leitura/escrita
-        public int value;         // Valor resultante (para IN)
+        private final int immediateValue;
+        private final boolean immediate;
+        private final boolean autoOut;
         private final ArrayBlockingQueue<Integer> pendingInput;
 
-        private IORequest(IOType type, PCB process, int address, int value, boolean needsInput) {
+        private IORequest(IOType type, PCB process, int address, int value, boolean needsInput, boolean immediate, boolean autoOut) {
             this.type = type;
             this.process = process;
             this.address = address;
-            this.value = value;
+            this.immediateValue = value;
+            this.immediate = immediate;
+            this.autoOut = autoOut;
             this.pendingInput = needsInput ? new ArrayBlockingQueue<>(1) : null;
         }
 
         public static IORequest read(PCB process, int address) {
-            return new IORequest(IOType.READ, process, address, 0, true);
+            return new IORequest(IOType.READ, process, address, 0, true, false, false);
         }
 
         public static IORequest write(PCB process, int address) {
-            return new IORequest(IOType.WRITE, process, address, 0, false);
+            return new IORequest(IOType.WRITE, process, address, 0, false, false, false);
+        }
+
+        public static IORequest writeImmediate(PCB process, int value) {
+            return new IORequest(IOType.WRITE, process, -1, value, false, true, false);
+        }
+
+        public static IORequest autoOut(PCB process, int value) {
+            return new IORequest(IOType.WRITE, process, -1, value, false, true, true);
         }
 
         public boolean needsInput() {
@@ -59,6 +71,18 @@ public class IODevice implements Runnable {
                 throw new IllegalStateException("Requisição não necessita entrada");
             }
             return pendingInput.take();
+        }
+
+        public boolean isImmediate() {
+            return immediate;
+        }
+
+        public int getImmediateValue() {
+            return immediateValue;
+        }
+
+        public boolean isAutoOut() {
+            return autoOut;
         }
     }
     
@@ -84,8 +108,20 @@ public class IODevice implements Runnable {
     public void addRequest(IORequest request) {
         try {
             requestQueue.put(request);
-            System.out.println("[IO] Pedido de " + request.type + " adicionado à fila (processo " + 
-                             request.process.pid + ", endereço lógico " + request.address + ")");
+            if (request.isImmediate()) {
+                String label = request.isAutoOut() ? "[AUTO-OUT]" : "[IO]";
+                System.out.println(String.format("%s enqueue pid=%d (%s) value=%d",
+                        label,
+                        request.process.pid,
+                        request.process.nome,
+                        request.getImmediateValue()));
+            } else {
+                System.out.println(String.format("[IO] enqueue %s pid=%d (%s) addr=%d",
+                        request.type,
+                        request.process.pid,
+                        request.process.nome,
+                        request.address));
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -163,18 +199,30 @@ public class IODevice implements Runnable {
         // Simula tempo de IO
         Thread.sleep(IO_DELAY);
 
-        boolean done = false;
-        while (!done) {
-            try {
-                int physicalAddr = so.traduzEndereco(request.process, request.address, false);
-                Word dataWord = so.hw.mem.read(physicalAddr);
-                System.out.println("[IO] OUT (processo " + request.process.pid + "): " + dataWord.p);
-                System.out.println("[IO] WRITE concluído: valor " + dataWord.p + 
-                                 " do endereço físico " + physicalAddr);
-                done = true;
-            } catch (PageFaultException e) {
-                System.out.println("[IO] Página necessária para OUT não está em memória. Aguardando carregamento...");
-                Thread.sleep(RETRY_DELAY);
+        if (request.isImmediate()) {
+            int value = request.getImmediateValue();
+            String prefix = request.isAutoOut() ? "[AUTO-OUT]" : "[IO]";
+            System.out.println(String.format("%s complete pid=%d (%s) value=%d",
+                    prefix,
+                    request.process.pid,
+                    request.process.nome,
+                    value));
+        } else {
+            boolean done = false;
+            while (!done) {
+                try {
+                    int physicalAddr = so.traduzEndereco(request.process, request.address, false);
+                    Word dataWord = so.hw.mem.read(physicalAddr);
+                    System.out.println(String.format("[IO] complete WRITE pid=%d (%s) value=%d addr=%d",
+                            request.process.pid,
+                            request.process.nome,
+                            dataWord.p,
+                            physicalAddr));
+                    done = true;
+                } catch (PageFaultException e) {
+                    System.out.println("[IO] Página necessária para OUT não está em memória. Aguardando carregamento...");
+                    Thread.sleep(RETRY_DELAY);
+                }
             }
         }
 

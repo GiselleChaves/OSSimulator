@@ -50,7 +50,9 @@ public class Scheduler implements Runnable {
         enqueueReadyIfNeeded(pcb);
         pcb.state = PCB.ProcState.READY;
         if (!alreadyQueued) {
-            System.out.println("Processo " + pcb.pid + " (" + pcb.nome + ") adicionado à fila READY");
+            String label = reason != null ? reason : "-";
+            System.out.println(String.format("[READY] pid=%d (%s) <- %s",
+                    pcb.pid, pcb.nome, label));
         }
         so.logStateChange(pcb, reason, from, PCB.ProcState.READY);
     }
@@ -114,7 +116,9 @@ public class Scheduler implements Runnable {
         lock.lock();
         try {
             if (running != null) {
-                System.out.println("[SCHEDULER] Bloqueando processo " + running.pid + " por " + reason);
+                String label = reason != null ? reason : "-";
+                System.out.println(String.format("[BLOCK] pid=%d (%s) -> %s",
+                        running.pid, running.nome, label));
                 so.hw.cpu.saveContext(running);
 
                 running.blockReasons.add(reason);
@@ -146,9 +150,8 @@ public class Scheduler implements Runnable {
 
             if (pcb.blockReasons.isEmpty() && pcb.state == PCB.ProcState.BLOCKED) {
                 blockedQueue.remove(pcb);
-                moveProcessToReady(pcb, "unblock " + reason);
+                moveProcessToReady(pcb, "unblock:" + reason);
                 hasWork.signal();
-            } else {
             }
         } finally {
             lock.unlock();

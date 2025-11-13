@@ -38,14 +38,27 @@ public class StateLogger {
     
     private String translateReason(String r) {
         if (r == null) return "-";
+        if (r.startsWith("unblock:")) {
+            String inner = r.substring("unblock:".length());
+            switch (inner) {
+                case "io":   return "libera io";
+                case "page": return "libera pg";
+                default:     return "libera " + inner;
+            }
+        }
         switch (r) {
             case "creation":     return "criacao";
             case "dispatch":     return "escalona";
-            case "page_fault":   return "pg fault";
-            case "page_loaded":  return "fim pg fault";
+            case "page":         return "pg fault";
             case "timer":        return "fatia tempo.";
-            case "io_request":   return "io begin";
-            case "io_complete":  return "fim io";
+            case "io":           return "io begin";
+            case "manual_remove":return "remov manual";
+            case "syscall_stop": return "stop syscall";
+            case "int_syscall_stop": return "stop int";
+            case "auto_out":     return "auto out";
+            case "memory_violation": return "mem invalida";
+            case "overflow":     return "overflow";
+            case "invalid_instruction": return "instr invalida";
             default:             return r;
         }
     }

@@ -48,15 +48,17 @@ public class InterruptHandling {
 	 * Chamado quando dispositivo de IO termina operação
 	 */
 	public void handleIO(PCB process) {
-		System.out.println("[INT_IO] Dispositivo de IO terminou operação para processo " + process.pid);
-
+		String phase = process.terminating ? "auto_out" : "io";
+		System.out.println(String.format("[INT_IO] conclusão %s -> pid=%d (%s)",
+				phase, process.pid, process.nome));
 		process.ioCompleted = true;
-		
-		// Processo estava bloqueado esperando IO, agora pode voltar para READY
-		if (process.state == PCB.ProcState.BLOCKED) {
-			so.scheduler.unblockProcess(process, "io_complete");
-			System.out.println("[INT_IO] Processo " + process.pid + " desbloqueado e movido para READY");
+
+		if (process.terminating) {
+			so.completeTerminationAfterIO(process);
+			return;
 		}
+
+		so.scheduler.unblockProcess(process, "io");
 	}
 	
 	/**
@@ -64,15 +66,13 @@ public class InterruptHandling {
 	 * Chamado quando dispositivo de Disco termina operação de paginação
 	 */
 	public void handleDisk(DiskDevice.DiskOperation operation) {
-		System.out.println("[INT_DISK] Dispositivo de Disco terminou " + operation.type + " para processo " + operation.process.pid + ", página " + operation.pageNumber);
+		System.out.println(String.format("[INT_DISK] conclusão %s -> pid=%d (%s) pg=%d",
+				operation.type, operation.process.pid, operation.process.nome, operation.pageNumber));
 		
 		// Se foi uma operação de LOAD_PAGE, o processo pode ser desbloqueado
 		if (operation.type == DiskDevice.DiskOpType.LOAD_PAGE) {
 			PCB process = operation.process;
-			if (process.state == PCB.ProcState.BLOCKED) {
-				so.scheduler.unblockProcess(process, "page_loaded");
-				System.out.println("[INT_DISK] Processo " + process.pid + " desbloqueado após carga de página");
-			}
+			so.scheduler.unblockProcess(process, "page");
 		}
 		
 		if (operation.type == DiskDevice.DiskOpType.SAVE_PAGE) {
@@ -115,7 +115,7 @@ public class InterruptHandling {
 		if (running != null) {
 			System.out.println("MEMORY_VIOLATION: Processo " + running.pid + " tentou acessar endereço inválido");
 			running.state = PCB.ProcState.TERMINATED;
-			so.rm(running.pid);
+			so.rm(running.pid, "memory_violation");
 			so.scheduler.scheduleNext();
 		}
 	}
@@ -125,7 +125,7 @@ public class InterruptHandling {
 		if (running != null) {
 			System.out.println("OVERFLOW: Processo " + running.pid + " causou overflow aritmético");
 			running.state = PCB.ProcState.TERMINATED;
-			so.rm(running.pid);
+			so.rm(running.pid, "overflow");
 			so.scheduler.scheduleNext();
 		}
 	}
@@ -135,7 +135,7 @@ public class InterruptHandling {
 		if (running != null) {
 			System.out.println("INVALID_INSTRUCTION: Processo " + running.pid + " tentou executar instrução inválida");
 			running.state = PCB.ProcState.TERMINATED;
-			so.rm(running.pid);
+			so.rm(running.pid, "invalid_instruction");
 			so.scheduler.scheduleNext();
 		}
 	}

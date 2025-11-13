@@ -11,7 +11,9 @@ import program.Programs;
 import util.Utilities;
 
 import java.util.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -46,6 +48,10 @@ public class SO {
     // Controle de trace global
     private boolean globalTrace;
 
+    // Snapshots de processos terminados
+    private final Map<Integer, String> terminationSnapshots;
+    private final Path terminationDumpDir;
+
     // Lock para operações thread-safe
     private ReentrantLock lock;
 
@@ -79,6 +85,14 @@ public class SO {
 
         // Logger
         stateLogger = new StateLogger(Path.of("logs", "so_state.log"));
+
+        terminationSnapshots = new HashMap<>();
+        terminationDumpDir = Path.of("logs", "terminated");
+        try {
+            Files.createDirectories(terminationDumpDir);
+        } catch (Exception e) {
+            System.out.println("WARN: Não foi possível criar diretório de dumps de término: " + e.getMessage());
+        }
 
         globalTrace = false;
         lock = new ReentrantLock();
@@ -215,13 +229,46 @@ public class SO {
         try {
             PCB running = scheduler.getRunning();
             if (running == null) return;
-            if (running.state == PCB.ProcState.TERMINATED) return;
-            // Usa a própria rm para centralizar desalocação/remoção
+            if (running.state == PCB.ProcState.TERMINATED || running.terminating) return;
+
+            // Captura contexto atual para preservar registradores
+            hw.cpu.saveContext(running);
 
             int r0 = running.reg != null && running.reg.length > 0 ? running.reg[0] : 0;
-            System.out.println("[OUT] pid=" + running.pid + " ("+ running.nome +") r0=" + r0);
 
-            rm(running.pid);
+            running.terminating = true;
+            running.terminationReason = reason;
+            running.ioPending = true;
+            running.ioCompleted = false;
+            running.ioTypeCode = 2; // OUT
+            running.ioLogicalAddr = -1;
+
+            IODevice.IORequest outRequest = IODevice.IORequest.autoOut(running, r0);
+            ioDevice.addRequest(outRequest);
+
+            scheduler.blockRunningProcess("io");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void completeTerminationAfterIO(PCB pcb) {
+        lock.lock();
+        try {
+            if (pcb == null || !processTable.containsKey(pcb.pid) || !pcb.terminating) {
+                return;
+            }
+
+            pcb.ioPending = false;
+            pcb.ioCompleted = false;
+            pcb.ioTypeCode = 0;
+            pcb.ioLogicalAddr = -1;
+
+            pcb.terminating = false;
+            String reason = pcb.terminationReason != null ? pcb.terminationReason : "auto_out";
+            pcb.terminationReason = null;
+
+            rm(pcb.pid, reason);
             scheduler.scheduleNext();
         } finally {
             lock.unlock();
@@ -325,11 +372,11 @@ public class SO {
             PCB runningNow = scheduler.getRunning();
             if (runningNow == pcb) {
                 System.out.println("[PAGE_FAULT] Bloqueando processo " + pcb.pid + " até carga completar");
-                scheduler.blockRunningProcess("page_fault");
+                scheduler.blockRunningProcess("page");
             } else if (pcb.state != PCB.ProcState.BLOCKED) {
                 PCB.ProcState fromState = pcb.state;
                 pcb.state = PCB.ProcState.BLOCKED;
-                logStateChange(pcb, "page_fault", fromState, PCB.ProcState.BLOCKED);
+                logStateChange(pcb, "page", fromState, PCB.ProcState.BLOCKED);
             }
         } finally {
             lock.unlock();
@@ -456,6 +503,10 @@ public class SO {
     }
 
     public boolean rm(int pid) {
+        return rm(pid, "manual_remove");
+    }
+
+    public boolean rm(int pid, String reason) {
         lock.lock();
         try {
             PCB pcb = processTable.get(pid);
@@ -464,12 +515,16 @@ public class SO {
                 return false;
             }
 
+            String snapshot = createProcessSnapshot(pcb, reason);
+            terminationSnapshots.put(pid, snapshot);
+            persistTerminationSnapshot(pid, snapshot);
+
             // Remover do escalonador
             scheduler.removeProcess(pid);
 
             PCB.ProcState from = pcb.state;
             pcb.state = PCB.ProcState.TERMINATED;
-            logStateChange(pcb, "manual_remove", from, PCB.ProcState.TERMINATED);
+            logStateChange(pcb, reason, from, PCB.ProcState.TERMINATED);
 
             // Desalocar memória
             gmDesaloca(pcb);
@@ -477,7 +532,7 @@ public class SO {
             // Remover da tabela de processos
             processTable.remove(pid);
 
-            System.out.println("Processo " + pid + " removido");
+            System.out.println("Processo " + pid + " removido (" + reason + ")");
             return true;
         } finally {
             lock.unlock();
@@ -497,34 +552,16 @@ public class SO {
         lock.lock();
         try {
             PCB pcb = processTable.get(pid);
-            if (pcb == null) {
-                return "ERRO: Processo " + pid + " não existe";
+            if (pcb != null) {
+                return createProcessSnapshot(pcb, "dump_active");
             }
 
-            StringBuilder sb = new StringBuilder();
-            sb.append("=== DUMP PROCESSO ").append(pid).append(" ===\n");
-            sb.append(pcb.toString()).append("\n");
-
-            // Mostrar mapeamento lógico → físico
-            sb.append("Mapeamento memória:\n");
-            for (int pg = 0; pg < pcb.numPages; pg++) {
-                PageTableEntry entry = pcb.pageTable[pg];
-                int endLogIni = pg * hw.mem.getTamPg();
-                int endLogFim = Math.min(endLogIni + hw.mem.getTamPg() - 1, pcb.tamanhoEmPalavras - 1);
-                
-                if (entry.valid) {
-                    int frame = entry.frameNumber;
-                    int endFisIni = frame * hw.mem.getTamPg();
-                    int endFisFim = endFisIni + hw.mem.getTamPg() - 1;
-                    sb.append(String.format("  Página %d (end.lóg %d-%d) → Frame %d (end.fís %d-%d) [VALID]\n",
-                            pg, endLogIni, endLogFim, frame, endFisIni, endFisFim));
-                } else {
-                    sb.append(String.format("  Página %d (end.lóg %d-%d) → NOT IN MEMORY\n",
-                            pg, endLogIni, endLogFim));
-                }
+            String snapshot = terminationSnapshots.get(pid);
+            if (snapshot != null) {
+                return snapshot;
             }
 
-            return sb.toString();
+            return "ERRO: Processo " + pid + " não existe";
         } finally {
             lock.unlock();
         }
@@ -650,5 +687,71 @@ public class SO {
 
     public boolean isGlobalTrace() {
         return globalTrace;
+    }
+
+    private String createProcessSnapshot(PCB pcb, String reason) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== SNAPSHOT PROCESSO ").append(pcb.pid).append(" (")
+                .append(pcb.nome != null ? pcb.nome : "desconhecido").append(") ===\n");
+        sb.append("Motivo: ").append(reason != null ? reason : "-").append("\n");
+        sb.append("Estado: ").append(pcb.state).append("\n");
+        sb.append("PC: ").append(pcb.pc).append("\n");
+        sb.append("Registradores:\n");
+        if (pcb.reg != null) {
+            for (int i = 0; i < pcb.reg.length; i++) {
+                sb.append(String.format("  r%d = %d\n", i, pcb.reg[i]));
+            }
+        }
+
+        sb.append("\nTabela de páginas:\n");
+        if (pcb.pageTable != null) {
+            for (int pg = 0; pg < pcb.pageTable.length; pg++) {
+                PageTableEntry entry = pcb.pageTable[pg];
+                if (entry == null) continue;
+                sb.append(String.format("  pg %d -> valid=%s frame=%d disk=%d\n",
+                        pg, entry.valid, entry.frameNumber, entry.diskAddress));
+            }
+        } else {
+            sb.append("  <sem tabela de páginas>\n");
+        }
+
+        sb.append("\nConteúdo de memória mapeado:\n");
+        if (pcb.pageTable != null) {
+            int tamPg = hw.mem.getTamPg();
+            for (int pg = 0; pg < pcb.pageTable.length; pg++) {
+                PageTableEntry entry = pcb.pageTable[pg];
+                if (entry == null || !entry.valid || entry.frameNumber < 0) {
+                    continue;
+                }
+                int frame = entry.frameNumber;
+                int inicioFisico = frame * tamPg;
+                int fimFisico = Math.min(inicioFisico + tamPg - 1, hw.mem.getTamMem() - 1);
+                sb.append(String.format("  Página %d -> Frame %d (físico %d-%d)\n", pg, frame, inicioFisico, fimFisico));
+                for (int offset = 0; offset < tamPg; offset++) {
+                    int addr = inicioFisico + offset;
+                    if (addr >= hw.mem.getTamMem()) {
+                        break;
+                    }
+                    sb.append(String.format("    [%4d] %s\n", addr, hw.mem.read(addr).toString()));
+                }
+            }
+        } else {
+            sb.append("  <nenhuma página residente>\n");
+        }
+        sb.append("=== FIM SNAPSHOT ===\n");
+        return sb.toString();
+    }
+
+    private void persistTerminationSnapshot(int pid, String snapshot) {
+        if (snapshot == null || terminationDumpDir == null) {
+            return;
+        }
+        try {
+            Path file = terminationDumpDir.resolve(String.format("pid_%d.log", pid));
+            Files.writeString(file, snapshot,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+        } catch (Exception e) {
+            System.out.println("WARN: Falhou ao salvar snapshot do processo " + pid + ": " + e.getMessage());
+        }
     }
 }

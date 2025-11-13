@@ -29,6 +29,11 @@ public class SysCallHandling {
         if (ioType == 1 || ioType == 2) {
             boolean isRead = (ioType == 1);
 
+            if (running.ioPending && !running.ioCompleted) {
+                so.scheduler.blockRunningProcess("io");
+                return false;
+            }
+
             if (running.ioPending && running.ioCompleted) {
                 running.ioPending = false;
                 running.ioCompleted = false;
@@ -37,10 +42,8 @@ public class SysCallHandling {
                 return true;
             }
 
-            if (running.ioPending && !running.ioCompleted) {
-                so.scheduler.blockRunningProcess("io_waiting");
-                return false;
-            }
+            // Garante que a página está residente (pode disparar page fault)
+            so.traduzEndereco(running, address, isRead);
 
             running.ioPending = true;
             running.ioCompleted = false;
@@ -48,12 +51,14 @@ public class SysCallHandling {
             running.ioLogicalAddr = address;
 
             so.hw.cpu.saveContext(running);
-            
-            IODevice.IORequest req = isRead ? IODevice.IORequest.read(running, address) : IODevice.IORequest.write(running, address);
+
+            IODevice.IORequest req = isRead ? IODevice.IORequest.read(running, address)
+                                            : IODevice.IORequest.write(running, address);
 
             so.getIODevice().addRequest(req);
-            so.scheduler.blockRunningProcess(isRead ? "io_request" : "io_request");
-            
+            so.scheduler.blockRunningProcess("io");
+            running.pc = running.pc + 1;
+
             return false;
         }
 
