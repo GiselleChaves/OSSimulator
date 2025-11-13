@@ -694,7 +694,9 @@ public class SO {
         sb.append("=== SNAPSHOT PROCESSO ").append(pcb.pid).append(" (")
                 .append(pcb.nome != null ? pcb.nome : "desconhecido").append(") ===\n");
         sb.append("Motivo: ").append(reason != null ? reason : "-").append("\n");
-        sb.append("Estado: ").append(pcb.state).append("\n");
+        boolean terminatedSnapshot = reason != null && !"dump_active".equals(reason);
+        PCB.ProcState stateForSnapshot = terminatedSnapshot ? PCB.ProcState.TERMINATED : pcb.state;
+        sb.append("Estado: ").append(stateForSnapshot).append("\n");
         sb.append("PC: ").append(pcb.pc).append("\n");
         sb.append("Registradores:\n");
         if (pcb.reg != null) {
