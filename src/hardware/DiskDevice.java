@@ -10,7 +10,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * Dispositivo de Disco - Thread separada que processa operações de paginação
+ * Dispositivo de Disco (memória secundária) - Thread separada que processa operações de paginação.
  * Responsável por:
  * - Salvar páginas vitimadas da memória para disco
  * - Carregar páginas do disco de volta para memória
@@ -24,7 +24,10 @@ public class DiskDevice implements Runnable {
     }
     
     /**
-     * Representa uma operação de disco
+     * Representa uma operação de disco (SAVE_PAGE ou LOAD_PAGE).
+     * SAVE_PAGE: copia conteúdo do frame para armazenamento em disco (gera diskAddress).
+     * LOAD_PAGE: escreve no frame a partir do programa original (se nunca vitimada)
+     *            ou a partir do conteúdo salvo em disco (se já vitimada).
      */
     public static class DiskOperation {
         public DiskOpType type;
@@ -62,7 +65,7 @@ public class DiskDevice implements Runnable {
     }
     
     /**
-     * Adiciona uma operação de disco à fila
+     * Adiciona uma operação de disco à fila.
      */
     public void addOperation(DiskOperation operation) {
         try {
@@ -75,8 +78,8 @@ public class DiskDevice implements Runnable {
     }
     
     /**
-     * Salva uma página da memória para o disco
-     * Retorna o endereço no disco onde foi salva
+     * Salva uma página da memória para o disco.
+     * Retorna o endereço no disco (diskAddress) onde a cópia ficou armazenada.
      */
     public int savePage(PCB process, int pageNumber, int frameNumber) {
         System.out.println("[DISK] Salvando página " + pageNumber + " do processo " + 
@@ -100,7 +103,7 @@ public class DiskDevice implements Runnable {
     }
     
     /**
-     * Carrega uma página do disco para a memória
+     * Carrega uma página do disco para a memória (para o frame indicado).
      */
     public void loadPage(int diskAddress, int frameNumber) {
         System.out.println("[DISK] Carregando página do disco (endereço " + diskAddress + 
@@ -124,7 +127,7 @@ public class DiskDevice implements Runnable {
     }
     
     /**
-     * Carrega página original do programa para a memória
+     * Carrega conteúdo original do programa (nunca vitimada) para a memória.
      */
     public void loadProgramPage(PCB process, int pageNumber, int frameNumber) {
         System.out.println("[DISK] Carregando página " + pageNumber + " do programa '" + 
@@ -213,10 +216,12 @@ public class DiskDevice implements Runnable {
     }
     
     public void shutdown() {
+        // Indica que a thread deve finalizar seu loop; término ocorre após sair do take/loop
         active = false;
     }
     
     public int getQueueSize() {
+        // Número de operações pendentes de disco (SAVE/LOAD) aguardando processamento
         return operationQueue.size();
     }
     

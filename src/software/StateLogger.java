@@ -64,6 +64,7 @@ public class StateLogger {
     }
 
     public void log(PCB pcb, String reason, PCB.ProcState from, PCB.ProcState to) {
+        // Registra uma linha no arquivo com: pid;nome;motivo;estadoDe;estadoPara;mapaPaginas
         if (pcb == null) {
             return;
         }
@@ -96,6 +97,7 @@ public class StateLogger {
     }
 
     private String formatPageTable(PCB pcb) {
+        // Formata a tabela de páginas como vetor de [pg, frame|-, mp|ms|--]
         if (pcb.pageTable == null || pcb.pageTable.length == 0) {
             return "{}";
         }

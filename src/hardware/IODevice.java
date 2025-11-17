@@ -10,8 +10,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * Dispositivo de IO (Console) - Thread separada que processa pedidos de IO
- * Modelo produtor/consumidor: CPU produz pedidos, IODevice consome
+ * Dispositivo de IO (Console).
+ * - Thread dedicada que consome pedidos de IN/OUT de uma fila (produtor/consumidor).
+ * - Simula DMA: acessa memória física diretamente após a tradução de endereços feita pelo SO.
+ * - Ao concluir uma operação, sinaliza a CPU com uma interrupção de IO.
  */
 public class IODevice implements Runnable {
     
@@ -20,7 +22,9 @@ public class IODevice implements Runnable {
     }
     
     /**
-     * Representa um pedido de IO
+     * Representa um pedido de IO.
+     * READ: requer um valor externo (capturado por `provideInput`) e escreve na memória do processo.
+     * WRITE: lê da memória do processo (ou imprime um valor imediato) e registra no log.
      */
     public static class IORequest {
         public final IOType type;
@@ -93,7 +97,8 @@ public class IODevice implements Runnable {
     }
     
     /**
-     * Adiciona um pedido de IO à fila
+     * Adiciona um pedido de IO à fila.
+     * A thread do dispositivo consumirá e processará conforme a ordem de chegada.
      */
     public void addRequest(IORequest request) {
         try {
@@ -141,6 +146,7 @@ public class IODevice implements Runnable {
         System.out.println("[IO] Thread de IO finalizada");
     }
     
+    // Despacha para o handler específico de READ/WRITE
     private void processRequest(IORequest request) throws InterruptedException {
         switch (request.type) {
             case READ:
@@ -217,6 +223,10 @@ public class IODevice implements Runnable {
         so.hw.cpu.signalIOInterrupt(request.process);
     }
     
+    /**
+     * Permite que o usuário (via Shell) forneça o valor para uma requisição
+     * de READ pendente do processo indicado por PID.
+     */
     public boolean provideInput(int pid, int value) {
         IORequest request = pendingReadRequests.get(pid);
         if (request == null) {
@@ -230,10 +240,12 @@ public class IODevice implements Runnable {
     }
     
     public void shutdown() {
+        // Pede término da thread; a parada efetiva ocorre quando a fila esvaziar/loop terminar
         active = false;
     }
     
     public int getQueueSize() {
+        // Quantidade de requisições pendentes de processamento pelo dispositivo
         return requestQueue.size();
     }
 }

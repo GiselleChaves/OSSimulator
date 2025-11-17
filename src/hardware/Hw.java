@@ -1,5 +1,11 @@
 package hardware;
 
+/**
+ * "Gabinete" do hardware: agrega Memória e CPU, além de manter os parâmetros
+ * de configuração (tamanho da memória, tamanho da página e delta do RR).
+ *
+ * Em alto nível: o SO conversa com o mundo físico através desta classe.
+ */
 public class Hw {
     public Memory mem;
     public CPU cpu;
@@ -17,6 +23,7 @@ public class Hw {
         this.tamPg = tamPg;
         this.delta = delta;
         
+        // Cria memória física e CPU já configurada com a fatia de tempo (delta)
         mem = new Memory(tamMem, tamPg);
         cpu = new CPU(mem, true); // true liga debug
         cpu.setDelta(delta);

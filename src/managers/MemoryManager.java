@@ -6,6 +6,14 @@ import software.PCB;
 
 import java.util.*;
 
+/**
+ * Gerente de Memória em nível de frames.
+ * - Mantém bitmap de ocupação e dono de cada frame.
+ * - Aloca/desaloca frames individualmente.
+ * - Implementa uma política simples de vítima (FIFO/primeiro ocupado).
+ * - Possui um mecanismo de "lock" de frame para evitar vitimações reentrantes
+ *   durante o carregamento de uma página (page-fault).
+ */
 public class MemoryManager {
     private int memSize;        // tamanho total da memória em palavras
     private int pgSize;         // tamanho da página / frame em palavras

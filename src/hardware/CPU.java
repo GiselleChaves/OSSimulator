@@ -7,6 +7,14 @@ import software.SO;
 import software.PageFaultException;
 import util.Utilities;
 
+/**
+ * Thread da CPU.
+ * - Executa o ciclo fetch/decode/execute das instruções do processo em RUNNING.
+ * - Conta instruções para preempção por tempo (delta) e gera TIMER.
+ * - Coopera com o SO para tradução de endereços lógicos→físicos.
+ * - Trata interrupções assíncronas de IO/Disco mesmo quando está ociosa
+ *   (via mecanismo de wake/sleep por `idleLock`).
+ */
 public class CPU implements Runnable {
     private int maxInt; // valores maximo e minimo para inteiros nesta cpu
     private int minInt;
@@ -74,18 +82,22 @@ public class CPU implements Runnable {
     }
 
     public void setSO(SO so) {
+        // Referência ao SO para tradução de endereços e callbacks
         this.so = so;
     }
 
     public void setDelta(int delta) {
+        // Configura o tamanho da fatia de tempo (nº de instruções por quantum)
         this.delta = delta;
     }
 
     public void setPreemptive(boolean preemptive) {
+        // Se false, não aciona TIMER automaticamente (modo debug/manual)
         this.preemptive = preemptive;
     }
 
     public PCB getCurrentPCB() {
+        // PCB considerado "atual" na CPU (usado como fallback em alguns handlers)
         return currentPCB;
     }
 
@@ -98,6 +110,10 @@ public class CPU implements Runnable {
         u = _u; // aponta para rotinas utilitárias - fazer dump da memória na tela
     }
 
+    /**
+     * Carrega o contexto de um PCB para os registradores/PC da CPU
+     * quando o processo é despachado para RUNNING.
+     */
     public void setContext(PCB pcb) {
         pc = pcb.pc;
         System.arraycopy(pcb.reg, 0, reg, 0, reg.length);
@@ -126,6 +142,10 @@ public class CPU implements Runnable {
         wakeUp();
     }
 
+    /**
+     * Persiste o contexto atual da CPU no PCB do processo (antes de bloquear,
+     * preemptar por TIMER ou finalizar).
+     */
     public void saveContext(PCB pcb) {
         pcb.pc = pc;
         System.arraycopy(reg, 0, pcb.reg, 0, reg.length);
@@ -149,6 +169,11 @@ public class CPU implements Runnable {
     }
 
     // Tradução de endereço lógico para físico via SO
+    /**
+     * Pede ao SO a tradução do endereço lógico, informando se é escrita
+     * (importante para marcar página como modificada). Qualquer exceção aqui
+     * é convertida em interrupção apropriada.
+     */
     private int translateAddress(int logicalAddr, boolean isWrite) {
         if (so != null) {
             PCB pcbForAccess = (so.scheduler.getRunning() != null) ? so.scheduler.getRunning() : currentPCB;
@@ -160,6 +185,10 @@ public class CPU implements Runnable {
     }
 
     // Acesso à memória com tradução
+    /**
+     * Lê uma palavra a partir de um endereço lógico. Se ocorrer page-fault,
+     * marca a interrupção correspondente para que o tratamento seja feito.
+     */
     private Word readMemory(int logicalAddr) {
         int physicalAddr;
         try {
@@ -178,6 +207,10 @@ public class CPU implements Runnable {
         return mem.read(physicalAddr);
     }
 
+    /**
+     * Escreve uma palavra em endereço lógico. A tradução pode gerar page-fault
+     * e a operação será tratada pela rotina de interrupção.
+     */
     private void writeMemory(int logicalAddr, Word word) {
         int physicalAddr;
         try {
@@ -232,12 +265,20 @@ public class CPU implements Runnable {
         }
     }
 
+    /** Versão utilitária para setar PC diretamente (usada em testes específicos). */
     public void setContext(int _pc) {
         pc = _pc;
         irpt = Interrupts.noInterrupt;
         instructionCount = 0;
     }
 
+    /**
+     * Um passo do ciclo da CPU (fetch → decode → execute) com:
+     * - checagem de instruções válidas
+     * - acesso à memória via tradução
+     * - contagem de instruções da fatia de tempo (TIMER)
+     * - invocação do tratamento de interrupções
+     */
     public void step() {
         if (cpuStop)
             return;
@@ -533,6 +574,11 @@ public class CPU implements Runnable {
         }
     }
 
+    /**
+     * Loop principal da thread da CPU:
+     * - executa passos enquanto houver processo RUNNING
+     * - caso contrário, processa interrupções assíncronas e dorme aguardando trabalho
+     */
     public void run() {
         active = true;
         while (active) {
@@ -581,6 +627,9 @@ public class CPU implements Runnable {
      * Trata interrupções assíncronas (IO/Disco) mesmo quando a CPU está ociosa.
      */
     private void processAsyncInterrupts() {
+        // 1) Esvazia, de forma atômica, o "slot" de interrupção de IO.
+        //    Usamos synchronized (this) para evitar condição de corrida com os métodos
+        //    signalIOInterrupt/signalDiskInterrupt que são synchronized também.
         PCB procWithIO = null;
         synchronized (this) {
             if (ioInterruptProcess != null) {
@@ -588,10 +637,12 @@ public class CPU implements Runnable {
                 ioInterruptProcess = null;
             }
         }
+        // 2) Fora da seção crítica, chama o handler do SO (evita bloquear quem sinaliza).
         if (procWithIO != null && so != null && so.ih != null) {
             so.ih.handleIO(procWithIO);
         }
 
+        // 3) Mesma estratégia para operação de disco concluída (LOAD_PAGE / SAVE_PAGE).
         DiskDevice.DiskOperation operation = null;
         synchronized (this) {
             if (diskInterruptOperation != null) {
@@ -599,6 +650,7 @@ public class CPU implements Runnable {
                 diskInterruptOperation = null;
             }
         }
+        // 4) Notifica o SO para efetivar o desbloqueio do processo (ex.: fim do LOAD_PAGE).
         if (operation != null && so != null && so.ih != null) {
             so.ih.handleDisk(operation);
         }
@@ -613,24 +665,40 @@ public class CPU implements Runnable {
     }
 
     private boolean hasPendingInterrupts() {
+        // Há interrupções de IO/Disco aguardando tratamento?
         return ioInterruptProcess != null || diskInterruptOperation != null;
     }
 
+    /**
+     * Coloca a CPU em espera até que haja:
+     * - um processo RUNNING para executar; ou
+     * - uma interrupção pendente de IO/Disco; ou
+     * - um sinal explícito de wakeUp().
+     */
     private void waitForWork() {
+        // Loop de espera passiva: a CPU dorme até haver trabalho real.
+        // Padrão "double-check" (checa antes e depois de entrar no wait)
+        // para evitar perder notificações em corridas de tempo.
         while (active) {
+            // 1) Dê preferência às interrupções pendentes (acorda reativamente).
             if (hasPendingInterrupts()) {
                 return;
             }
+            // 2) Se o escalonador já tem um RUNNING configurado, volte a executar.
             if (hasRunnableProcess()) {
                 return;
             }
+            // 3) Não há nada a fazer: entra em espera. Acordará por wakeUp() ou interrupt().
             synchronized (idleLock) {
+                // 3.1) Revalida condições após adquirir o lock (evita "lost wakeup").
                 if (!active || hasPendingInterrupts()) {
                     return;
                 }
                 try {
+                    // 3.2) Aguarda notificação (IO/Disco concluído, novo dispatch, etc.).
                     idleLock.wait();
                 } catch (InterruptedException e) {
+                    // 3.3) Propaga sinal de interrupção e sai da espera.
                     Thread.currentThread().interrupt();
                     return;
                 }
@@ -638,6 +706,9 @@ public class CPU implements Runnable {
         }
     }
 
+    /**
+     * Acorda a CPU caso esteja aguardando em `waitForWork()`.
+     */
     public void wakeUp() {
         synchronized (idleLock) {
             idleLock.notifyAll();

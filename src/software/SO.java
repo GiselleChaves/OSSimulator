@@ -19,6 +19,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class SO {
+    /**
+     * Núcleo do Sistema Operacional.
+     * - GP (gerência de processos): criação, remoção, estados e snapshots.
+     * - GM (memória virtual): tabela de páginas, tradução, page-fault assíncrono.
+     * - Integração com dispositivos (console/disco) e com o escalonador.
+     *
+     * A ideia é que toda decisão "de SO" passe por aqui (tradução, fault,
+     * bloqueio/desbloqueio, criação/remoção, etc.).
+     */
     public InterruptHandling ih;
     public SysCallHandling sc;
     public Utilities utils;
@@ -139,6 +148,10 @@ public class SO {
 
     // ============== GERENTE DE MEMÓRIA (GM PAGINADO) ==============
 
+    /**
+     * Aloca a estrutura de memória do processo e carrega apenas a primeira
+     * página (lazy loading). As demais serão carregadas sob demanda (page-fault).
+     */
     public boolean gmAloca(int nroPalavras, PCB pcb) {
         int numPages = (int) Math.ceil((double) nroPalavras / hw.mem.getTamPg());
         pcb.numPages = numPages;
@@ -178,6 +191,12 @@ public class SO {
         }
     }
 
+    /**
+     * Tradução de endereço lógico→físico.
+     * - Se a página não estiver válida, dispara o tratamento de page-fault
+     *   de forma assíncrona e lança `PageFaultException` para a CPU sinalizar.
+     * - Atualiza metadados (último acesso e bit de modificação).
+     */
     public int traduzEndereco(PCB pcb, int endLogico, boolean isWrite) {
         lock.lock();
         try {
@@ -293,9 +312,11 @@ public class SO {
 
             System.out.println("[PAGE_FAULT] Tratando page fault para processo " + pcb.pid + ", página " + pageNumber);
 
+            // 1) Tenta alocar um frame livre
             int frame = memoryManager.allocateFrame(pcb, pageNumber);
             if (frame < 0) {
                 System.out.println("[PAGE_FAULT] Sem frames livres, selecionando vítima...");
+                // 2) Não há frame livre: escolhe uma vítima conforme política simples
                 frame = memoryManager.selectVictim();
                 if (frame < 0) {
                     throw new RuntimeException("ERRO: Não há frames disponíveis para tratamento de page fault");
@@ -313,12 +334,14 @@ public class SO {
                 System.out.println("[PAGE_FAULT] Vitimando página " + victimPage + " do processo " +
                         victimPCB.pid + " (frame " + frame + ")");
 
-                // Marca a página como inválida imediatamente para evitar novos acessos
+                // 3) “Expulsa” a página do dono: marca inválida e remove frame
                 victimEntry.valid = false;
                 victimEntry.frameNumber = -1;
 
+                // 4) “Trava” o frame: evita que outra thread o vitime/capture simultaneamente
                 memoryManager.lockFrame(frame);
 
+                // 5) Agenda operação de salvar o conteúdo do frame no “disco”
                 DiskDevice.DiskOperation saveOperation = new DiskDevice.DiskOperation(
                         DiskDevice.DiskOpType.SAVE_PAGE,
                         victimPCB,
@@ -328,18 +351,19 @@ public class SO {
                 );
                 diskDevice.addOperation(saveOperation);
             } else {
+                // Tinha frame livre: marca reserva para não ser vitimado durante o carregamento
                 memoryManager.lockFrame(frame);
             }
 
-            // Reserva o frame durante o carregamento (evita vitimação reentrante)
-            // Reserva o frame (se veio da lista livre, garante metadados; se veio de vitimação, reatribui)
+            // 6) Reserva/atribui o frame ao demandante (metadados de dono/página)
             memoryManager.lockFrame(frame);
             memoryManager.assignFrame(frame, pcb, pageNumber);
 
+            // 7) Marca a entrada como “carregando” e aponta o frame que receberá a página
             entry.loading = true;
             entry.frameNumber = frame;
 
-            // Solicita ao disco o carregamento da página
+            // 8) Enfileira operação de LOAD_PAGE: traz do programa original (ou do disco se já vitimada)
             DiskDevice.DiskOperation loadOperation = new DiskDevice.DiskOperation(
                     DiskDevice.DiskOpType.LOAD_PAGE,
                     pcb,
@@ -349,7 +373,7 @@ public class SO {
             );
             diskDevice.addOperation(loadOperation);
 
-            // Garante que o processo ficará bloqueado até o fim da operação de disco
+            // 9) Bloqueia o processo até o fim do carregamento pelo disco
             PCB runningNow = scheduler.getRunning();
             if (runningNow == pcb) {
                 System.out.println("[PAGE_FAULT] Bloqueando processo " + pcb.pid + " até carga completar");
@@ -366,6 +390,10 @@ public class SO {
     }
 
     // Carregamento de programa - agora carrega apenas primeira página
+    /**
+     * Carrega no frame da página 0 o conteúdo inicial do programa (imagem).
+     * É chamado apenas na criação do processo (lazy loading).
+     */
     public void carregaPrograma(Program programa, PCB pcb) {
         // Carregar apenas primeira página (lazy loading)
         carregaPagina(pcb, 0, pcb.pageTable[0].frameNumber, programa);
@@ -439,6 +467,13 @@ public class SO {
 
     // ============== GERENTE DE PROCESSOS (GP) ==============
 
+    /**
+     * Cria um novo processo:
+     * - encontra a imagem do programa;
+     * - configura PCB e tabela de páginas;
+     * - aloca e carrega apenas a página 0;
+     * - coloca na fila READY (o escalonador despacha quando a CPU estiver livre).
+     */
     public int newProcess(String nomeProg) {
         lock.lock();
         try {
@@ -487,6 +522,12 @@ public class SO {
         return rm(pid, "manual_remove");
     }
 
+    /**
+     * Remove um processo do sistema:
+     * - registra um snapshot para consulta posterior (logs/terminated);
+     * - remove de filas/execução;
+     * - finaliza/atualiza estado e desaloca seus frames.
+     */
     public boolean rm(int pid, String reason) {
         lock.lock();
         try {
@@ -529,6 +570,9 @@ public class SO {
         }
     }
 
+    /**
+     * Retorna snapshot do processo (vivo) ou o snapshot salvo ao ser encerrado.
+     */
     public String dump(int pid) {
         lock.lock();
         try {
@@ -577,6 +621,10 @@ public class SO {
 
     // ============== CONTROLE DE EXECUÇÃO ==============
 
+    /**
+     * Sinaliza ao escalonador que o processo deve ser executado.
+     * Útil em modo "manual"/debug; o sistema normalmente já agenda automaticamente.
+     */
     public void exec(int pid) {
         lock.lock();
         try {
@@ -607,6 +655,9 @@ public class SO {
         }
     }
 
+    /**
+     * Coloca o sistema em execução automática até que todos os processos terminem.
+     */
     public void execAll() {
         System.out.println("Escalonador em execução automática. Aguardando processos finalizarem...");
         scheduler.setAutoSchedule(true);
@@ -636,6 +687,7 @@ public class SO {
 
     // ============== CONTROLE DE CONTEXTO ==============
 
+    /** Forwards utilitários para a CPU (usado pelo Scheduler). */
     public void setContext(PCB pcb) {
         hw.cpu.setContext(pcb);
     }
@@ -670,6 +722,12 @@ public class SO {
         return globalTrace;
     }
 
+    /**
+     * Gera um snapshot textual detalhado do estado do processo:
+     * - PC e registradores,
+     * - tabela de páginas,
+     * - conteúdo das páginas residentes.
+     */
     private String createProcessSnapshot(PCB pcb, String reason) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== SNAPSHOT PROCESSO ").append(pcb.pid).append(" (")
@@ -725,6 +783,9 @@ public class SO {
         return sb.toString();
     }
 
+    /**
+     * Persiste o snapshot do processo encerrado em logs/terminated/pid_X.log.
+     */
     private void persistTerminationSnapshot(int pid, String snapshot) {
         if (snapshot == null || terminationDumpDir == null) {
             return;

@@ -3,6 +3,12 @@ package program;
 import hardware.Opcode;
 import hardware.Word;
 
+/**
+ * Catálogo de programas de demonstração usados nos testes e nas aulas.
+ * Cada `Program` é composto por um vetor de `Word` (código + dados).
+ * Observação: a execução real sofre paginação; apenas a primeira página é
+ * carregada no momento da criação do processo (lazy loading).
+ */
 public class Programs {
 
 	public Word[] retrieveProgram(String pname) {

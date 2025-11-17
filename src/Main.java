@@ -1,3 +1,10 @@
+/**
+ * Ponto de entrada do simulador.
+ * - Aceita parâmetros de linha de comando para memória, tamanho de página e delta.
+ * - Instancia e executa o `Sistema` (que iniciará todas as threads).
+ *
+ * Dica em apresentação: rode com --help para ver exemplos e flags disponíveis.
+ */
 public class Main {
     public static void main(String[] args) {
         // Parâmetros default
@@ -45,6 +52,7 @@ public class Main {
     }
     
     private static void printHelp() {
+        // Ajuda simples com parâmetros e exemplos de execução
         System.out.println("SO Didático - Simulador de Sistema Operacional");
         System.out.println();
         System.out.println("Uso: java Main [opções]");

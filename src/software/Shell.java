@@ -3,6 +3,11 @@ package software;
 import java.util.List;
 import java.util.Scanner;
 
+/**
+ * Shell interativo do SO (thread própria).
+ * - Aceita comandos enquanto o sistema executa (SO reativo).
+ * - Encaminha ações ao núcleo (`SO`) e imprime feedback para o usuário.
+ */
 public class Shell implements Runnable {
     private SO so;
     private boolean active;
@@ -16,6 +21,7 @@ public class Shell implements Runnable {
 
     @Override
     public void run() {
+        // Mensagem de boas-vindas e ajuda inicial
         System.out.println("=== Mini-SO Didático - Shell Iniciado ===");
         System.out.println("Comandos disponíveis:");
         System.out.println("  new <nome>     - Criar novo processo");
@@ -116,6 +122,7 @@ public class Shell implements Runnable {
         scanner.close();
     }
 
+    /** new <nome> — cria um processo a partir de um programa disponível. */
     private void handleNew(String[] parts) {
         if (parts.length != 2) {
             System.out.println("Uso: new <nome_programa>");
@@ -130,6 +137,7 @@ public class Shell implements Runnable {
         }
     }
 
+    /** rm <pid> — remove (encerra) um processo do sistema. */
     private void handleRm(String[] parts) {
         if (parts.length != 2) {
             System.out.println("Uso: rm <pid>");
@@ -148,6 +156,7 @@ public class Shell implements Runnable {
         }
     }
 
+    /** ps — lista os processos ativos com estado, PC e número de páginas. */
     private void handlePs() {
         List<PCB> processes = so.ps();
         
@@ -166,6 +175,7 @@ public class Shell implements Runnable {
         }
     }
 
+    /** dump <pid> — imprime snapshot do processo (ou o snapshot salvo ao terminar). */
     private void handleDump(String[] parts) {
         if (parts.length != 2) {
             System.out.println("Uso: dump <pid>");
@@ -181,6 +191,7 @@ public class Shell implements Runnable {
         }
     }
 
+    /** dumpM <i> <f> — dump de um intervalo da memória física. */
     private void handleDumpM(String[] parts) {
         if (parts.length != 3) {
             System.out.println("Uso: dumpM <inicio> <fim>");
@@ -197,10 +208,12 @@ public class Shell implements Runnable {
         }
     }
 
+    /** frames — imprime mapa de ocupação de frames. */
     private void handleFrames() {
         System.out.println(so.frames());
     }
 
+    /** exec <pid> — pede ao escalonador que considere o processo para execução. */
     private void handleExec(String[] parts) {
         if (parts.length != 2) {
             System.out.println("Uso: exec <pid>");
@@ -215,18 +228,22 @@ public class Shell implements Runnable {
         }
     }
 
+    /** execAll — liga execução automática até todos finalizarem. */
     private void handleExecAll() {
         so.execAll();
     }
 
+    /** traceOn — habilita logs detalhados de tradução/acessos (debug). */
     private void handleTraceOn() {
         so.traceOn();
     }
 
+    /** traceOff — desabilita logs de trace global. */
     private void handleTraceOff() {
         so.traceOff();
     }
 
+    /** help — reimprime o guia de comandos. */
     private void handleHelp() {
         System.out.println();
         System.out.println("=== AJUDA - SO Didático ===");
@@ -266,6 +283,7 @@ public class Shell implements Runnable {
         System.out.println();
     }
 
+    /** in <pid> <valor> — fornece a entrada para um processo bloqueado em IN. */
     private void handleIn(String[] parts) {
         if (parts.length != 3) {
             System.out.println("Uso: in <pid> <valor>");
@@ -284,6 +302,7 @@ public class Shell implements Runnable {
         }
     }
 
+    /** exit — encerra o shell e sinaliza o fechamento do sistema. */
     private void handleExit() {
         System.out.println("Finalizando sistema...");
         active = false;

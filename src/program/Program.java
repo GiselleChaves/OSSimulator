@@ -6,6 +6,10 @@ package program;
 
 import hardware.Word;
 
+/**
+ * Representa um programa “em disco”: um nome e sua imagem (array de Words).
+ * O SO carrega páginas desta imagem para a memória conforme necessário (VM).
+ */
 public class Program {
 	public String name;
 	public Word[] image;

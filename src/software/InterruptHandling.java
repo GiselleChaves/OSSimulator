@@ -4,6 +4,13 @@ import hardware.Interrupts;
 import hardware.DiskDevice;
 
 // ------- I N T E R R U P C O E S - rotinas de tratamento ------
+/**
+ * Rotinas de tratamento de interrupções (CPU delega para cá).
+ * - TIMER: preempção por fatia de tempo.
+ * - IO: desbloqueia processo que concluiu IN/OUT.
+ * - DISK: coordena page-fault (desbloqueio após LOAD_PAGE) e logs de SAVE_PAGE.
+ * - STOP / violações (endereço inválido, overflow, instrução inválida): finalizam processo.
+ */
 public class InterruptHandling {
 	private SO so; // referencia ao SO
 

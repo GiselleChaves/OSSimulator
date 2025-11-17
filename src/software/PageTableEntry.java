@@ -1,7 +1,11 @@
 package software;
 
 /**
- * Entrada da tabela de páginas com flags para memória virtual
+ * Entrada da tabela de páginas com flags para memória virtual.
+ * - valid/frameNumber: indicam se a página está residente e em qual frame.
+ * - diskAddress: local no “disco” onde a cópia foi salva quando vitimada.
+ * - modified/lastAccessTime: metadados úteis para políticas (ex.: LRU) e write-back.
+ * - loading: marca página com carga em andamento (evita concorrência no fault).
  */
 public class PageTableEntry {
     public int frameNumber;      // Número do frame físico (-1 se não estiver em memória)

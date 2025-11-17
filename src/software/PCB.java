@@ -3,6 +3,15 @@ package software;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * Process Control Block (PCB).
+ * Guarda toda a informação necessária para pausar e retomar a execução de um processo:
+ * - contexto da CPU (PC e registradores),
+ * - estado (NEW/READY/RUNNING/BLOCKED/TERMINATED),
+ * - tabela de páginas e metadados de memória virtual,
+ * - flags e dados temporários de IO,
+ * - conjunto de motivos de bloqueio (permite compor "io" e "page" simultaneamente).
+ */
 public class PCB {
     public PCB(int pid, int inicio, int fim, String programName) {
         this.pid = pid;

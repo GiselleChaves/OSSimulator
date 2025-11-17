@@ -5,6 +5,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Escalonador Round-Robin (thread própria).
+ * - Mantém filas READY e BLOCKED; controla `running`.
+ * - Faz preempção por TIMER (cooperando com a CPU).
+ * - Bloqueia/desbloqueia processos por motivos "io" e "page".
+ * - Sinaliza a CPU quando há novo trabalho (wakeUp).
+ */
 public class Scheduler implements Runnable {
     private BlockingQueue<PCB> readyQueue;
     private BlockingQueue<PCB> blockedQueue; // Fila de processos bloqueados
@@ -32,15 +39,20 @@ public class Scheduler implements Runnable {
     }
 
     private boolean isInReadyQueue(PCB pcb) {
+        // Consulta simples para evitar enfileirar duplicado em READY
         return readyQueue.contains(pcb);
     }
 
     private void enqueueReadyIfNeeded(PCB pcb) {
+        // Só enfileira se não for o processo em execução e se já não estiver na fila
         if (!isInReadyQueue(pcb) && !isRunningProcess(pcb)) {
             readyQueue.offer(pcb);
         }
     }
 
+    /**
+     * Transita o processo para READY (enfileira se não estiver) e registra log de estado.
+     */
     private void moveProcessToReady(PCB pcb, String reason) {
         if (pcb == null || pcb.state == PCB.ProcState.TERMINATED) {
             return;
@@ -57,6 +69,9 @@ public class Scheduler implements Runnable {
         so.logStateChange(pcb, reason, from, PCB.ProcState.READY);
     }
 
+    /**
+     * Coloca um processo na fila READY e sinaliza que há trabalho para o loop do escalonador.
+     */
     public void addToReady(PCB pcb, String reason) {
         lock.lock();
         try {
@@ -67,6 +82,9 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /**
+     * Timer da CPU disparou: salva contexto do atual, devolve-o a READY e sinaliza escalonamento.
+     */
     public void onTimer() {
         lock.lock();
         try {
@@ -87,6 +105,10 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /**
+     * Interface pública que tenta despachar o próximo processo (com trava).
+     * Útil quando um evento externo terminou (p. ex., remoção do RUNNING atual).
+     */
     public void scheduleNext() {
         lock.lock();
         try {
@@ -96,6 +118,9 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /**
+     * Despacha próximo processo da fila READY para RUNNING e acorda a CPU.
+     */
     private void scheduleNextLocked() {
         if (running == null && !readyQueue.isEmpty()) {
             PCB next = readyQueue.poll();
@@ -160,6 +185,9 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /**
+     * Remove um processo do sistema de filas e da execução atual, se necessário.
+     */
     public void removeProcess(int pid) {
         lock.lock();
         try {
@@ -181,6 +209,7 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /** Retorna o processo atualmente em execução (ou null). */
     public PCB getRunning() {
         lock.lock();
         try {
@@ -190,14 +219,19 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /** Informação rápida: há algum processo ativo/pronto/bloqueado? */
     public boolean hasReadyProcesses() {
         return !readyQueue.isEmpty() || running != null || !blockedQueue.isEmpty();
     }
     
+    /** Quantos estão na fila de bloqueados */
     public int getBlockedCount() {
         return blockedQueue.size();
     }
     
+    /**
+     * Liga/desliga modo "automático" (o loop do escalonador aguarda sinalizações e despacha).
+     */
     public void setAutoSchedule(boolean autoSchedule) {
         lock.lock();
         try {
@@ -212,12 +246,14 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /** Indica se o modo automático está habilitado. */
     public boolean isAutoSchedule() {
         return autoSchedule;
     }
     
     @Override
     public void run() {
+        // Loop do escalonador: dorme até ter trabalho e então despacha próximo processo
         while (active) {
             lock.lock();
             try {
@@ -237,6 +273,7 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /** Finaliza a thread do escalonador (acorda qualquer await pendente). */
     public void shutdown() {
         lock.lock();
         try {
@@ -247,6 +284,7 @@ public class Scheduler implements Runnable {
         }
     }
     
+    /** Sinaliza o escalonador para acordar (quando há novo trabalho). */
     public void wakeUp() {
         lock.lock();
         try {

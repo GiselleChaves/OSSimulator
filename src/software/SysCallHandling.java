@@ -3,6 +3,14 @@ package software;
 import hardware.IODevice;
 
 // ------- C H A M A D A S D E S I S T E M A - rotinas de tratamento
+/**
+ * Lida com `SYSCALL` de IO disparada por programas:
+ * - r8 define o tipo: 1=IN (leitura), 2=OUT (escrita)
+ * - r9 define o endereço lógico alvo
+ *
+ * Fluxo: salva contexto → cria requisição → bloqueia o processo → CPU segue com outro.
+ * No retorno (interrupção de IO) o processo é desbloqueado e continua do PC+1.
+ */
 public class SysCallHandling {
     private SO so; // referencia ao SO
 
@@ -15,6 +23,11 @@ public class SysCallHandling {
         so.terminateRunning("syscall_stop");
     }
 
+    /**
+     * Trata a chamada de sistema de IO.
+     * Retorna true se a instrução pode avançar PC+1 imediatamente (casos inválidos
+     * ou retorno já concluído), e false se o processo foi bloqueado para aguardar.
+     */
     public boolean handle() {
         int ioType = so.hw.cpu.getReg()[8];
         int address = so.hw.cpu.getReg()[9];

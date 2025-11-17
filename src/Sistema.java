@@ -1,6 +1,13 @@
 // -------------------------------------------------------------------------------------------------------
 // ------------------- S I S T E M A
 // --------------------------------------------------------------------
+/**
+ * Responsável por "subir o SO": instancia hardware (`Hw`), o núcleo (`SO`) e a
+ * interface de usuário (`Shell`), além de iniciar e finalizar as threads
+ * principais do sistema (Scheduler, CPU, IODevice, DiskDevice e Shell).
+ *
+ * Em apresentação: pense nesta classe como o botão de ligar e desligar do SO.
+ */
 
 import hardware.Hw;
 import software.SO;
@@ -36,27 +43,27 @@ public class Sistema {
     public void run() {
         System.out.println("Iniciando threads do sistema...");
         
-        // Iniciar thread do escalonador
+		// Inicia o escalonador (decide quem roda quando há processo pronto)
         schedulerThread = new Thread(so.scheduler, "Scheduler");
         schedulerThread.setDaemon(true);
         schedulerThread.start();
         
-        // Iniciar thread da CPU
+		// Inicia a CPU (executa instruções, conta fatia de tempo e gera TIMER)
         cpuThread = new Thread(hw.cpu, "CPU");
         cpuThread.setDaemon(true);
         cpuThread.start();
         
-        // Iniciar thread de IO
+		// Inicia o Console (dispositivo de IO assíncrono - IN/OUT)
         ioThread = new Thread(so.getIODevice(), "IODevice");
         ioThread.setDaemon(true);
         ioThread.start();
         
-        // Iniciar thread de Disco
+		// Inicia o Disco (carrega/salva páginas quando há page-fault/vitimação)
         diskThread = new Thread(so.getDiskDevice(), "DiskDevice");
         diskThread.setDaemon(true);
         diskThread.start();
         
-        // Iniciar thread do shell (thread principal)
+		// Inicia o Shell interativo (aceita comandos enquanto o SO executa)
         shellThread = new Thread(shell, "Shell");
         shellThread.start();
         
