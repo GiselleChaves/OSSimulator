@@ -48,15 +48,9 @@ public class InterruptHandling {
 	 * Chamado quando dispositivo de IO termina operação
 	 */
 	public void handleIO(PCB process) {
-		String phase = process.terminating ? "auto_out" : "io";
-		System.out.println(String.format("[INT_IO] conclusão %s -> pid=%d (%s)",
-				phase, process.pid, process.nome));
+		System.out.println(String.format("[INT_IO] conclusão io -> pid=%d (%s)",
+				process.pid, process.nome));
 		process.ioCompleted = true;
-
-		if (process.terminating) {
-			so.completeTerminationAfterIO(process);
-			return;
-		}
 
 		so.scheduler.unblockProcess(process, "io");
 	}

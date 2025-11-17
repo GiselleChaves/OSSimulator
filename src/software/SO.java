@@ -14,6 +14,7 @@ import java.util.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -54,6 +55,9 @@ public class SO {
 
     // Lock para operações thread-safe
     private ReentrantLock lock;
+
+    // Últimos valores de saída (OUT) por processo
+    private final ConcurrentHashMap<Integer, Integer> lastProcessOutputs;
 
     public SO(Hw hw) {
         this.hw = hw;
@@ -96,6 +100,7 @@ public class SO {
 
         globalTrace = false;
         lock = new ReentrantLock();
+        lastProcessOutputs = new ConcurrentHashMap<>();
     }
     
     public IODevice getIODevice() {
@@ -104,6 +109,14 @@ public class SO {
     
     public DiskDevice getDiskDevice() {
         return diskDevice;
+    }
+
+    public void recordProcessOutput(int pid, int value) {
+        lastProcessOutputs.put(pid, value);
+    }
+
+    public Integer getLastOutput(int pid) {
+        return lastProcessOutputs.get(pid);
     }
 
     public boolean provideInput(int pid, int value) {
@@ -229,52 +242,20 @@ public class SO {
         try {
             PCB running = scheduler.getRunning();
             if (running == null) return;
-            if (running.state == PCB.ProcState.TERMINATED || running.terminating) return;
+            if (running.state == PCB.ProcState.TERMINATED) return;
 
             // Captura contexto atual para preservar registradores
             hw.cpu.saveContext(running);
 
-            int r0 = running.reg != null && running.reg.length > 0 ? running.reg[0] : 0;
-
-            running.terminating = true;
-            running.terminationReason = reason;
-            running.ioPending = true;
-            running.ioCompleted = false;
-            running.ioTypeCode = 2; // OUT
-            running.ioLogicalAddr = -1;
-
-            IODevice.IORequest outRequest = IODevice.IORequest.autoOut(running, r0);
-            ioDevice.addRequest(outRequest);
-
-            scheduler.blockRunningProcess("io");
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    public void completeTerminationAfterIO(PCB pcb) {
-        lock.lock();
-        try {
-            if (pcb == null || !processTable.containsKey(pcb.pid) || !pcb.terminating) {
-                return;
-            }
-
-            pcb.ioPending = false;
-            pcb.ioCompleted = false;
-            pcb.ioTypeCode = 0;
-            pcb.ioLogicalAddr = -1;
-
-            pcb.terminating = false;
-            String reason = pcb.terminationReason != null ? pcb.terminationReason : "auto_out";
-            pcb.terminationReason = null;
-
-            rm(pcb.pid, reason);
+            // Remove o processo imediatamente e escalona outro
+            rm(running.pid, reason);
             scheduler.scheduleNext();
+            hw.cpu.wakeUp();
         } finally {
             lock.unlock();
         }
     }
-    
+
     /**
      * Notificação utilizada pelo dispositivo de disco quando uma página é carregada.
      * Responsável por liberar o frame reservado durante o tratamento do page fault.

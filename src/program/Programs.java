@@ -18,18 +18,20 @@ public class Programs {
 					new Word[]{
 							// este fatorial so aceita valores positivos. nao pode ser zero
 							// linha coment
-							new Word(Opcode.LDI, 0, -1, 7), // 0 r0 é valor a calcular fatorial
-							new Word(Opcode.LDI, 1, -1, 1), // 1 r1 é 1 para multiplicar (por r0)
-							new Word(Opcode.LDI, 6, -1, 1), // 2 r6 é 1 o decremento
-							new Word(Opcode.LDI, 7, -1, 8), // 3 r7 tem posicao 8 para fim do programa
-							new Word(Opcode.JMPIE, 7, 0, 0), // 4 se r0=0 pula para r7(=8)
-							new Word(Opcode.MULT, 1, 0, -1), // 5 r1 = r1 * r0 (r1 acumula o produto por cada termo)
-							new Word(Opcode.SUB, 0, 6, -1), // 6 r0 = r0 - r6 (r6=1) decrementa r0 para proximo
-							// termo
-							new Word(Opcode.JMP, -1, -1, 4), // 7 vai p posicao 4
-							new Word(Opcode.STD, 1, -1, 10), // 8 coloca valor de r1 na posição 10
-							new Word(Opcode.STOP, -1, -1, -1), // 9 stop
-							new Word(Opcode.DATA, -1, -1, -1) // 10 ao final o valor está na posição 10 da memória
+							new Word(Opcode.LDI, 0, -1, 7),  // 0 r0 é valor a calcular fatorial
+							new Word(Opcode.LDI, 1, -1, 1),  // 1 r1 acumula o fatorial
+							new Word(Opcode.LDI, 6, -1, 1),  // 2 r6 é 1 o decremento
+							new Word(Opcode.LDI, 7, -1, 8),  // 3 r7 aponta para bloco de saída
+							new Word(Opcode.JMPIE, 7, 0, 0), // 4 se r0=0 pula para r7
+							new Word(Opcode.MULT, 1, 0, -1), // 5 r1 = r1 * r0
+							new Word(Opcode.SUB, 0, 6, -1),  // 6 r0 = r0 - r6
+							new Word(Opcode.JMP, -1, -1, 4), // 7 loop
+							new Word(Opcode.STD, 1, -1, 13), // 8 coloca valor de r1 na posição 13
+							new Word(Opcode.LDI, 8, -1, 2),  // 9 prepara SYSCALL OUT
+							new Word(Opcode.LDI, 9, -1, 13), // 10 endereço do resultado
+							new Word(Opcode.SYSCALL, -1, -1, -1), // 11 realiza OUT
+							new Word(Opcode.STOP, -1, -1, -1),    // 12 stop
+							new Word(Opcode.DATA, -1, -1, -1)     // 13 resultado fica aqui
 					}),
 
 			new Program("fatorialV2",

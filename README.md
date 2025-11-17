@@ -222,20 +222,23 @@ Finalizando sistema...
 ## Testes Automatizados
 
 ### TesteSistema.java
-Contém 4 testes principais:
-1. **Paginação Básica**: Verifica alocação de páginas e tradução de endereços
-2. **Round-Robin**: Testa alternância entre 3 processos com preempção
-3. **STOP**: Verifica finalização e desalocação de processo
-4. **Funcionamento Contínuo**: Testa execução automática sem comando explícito
+Executa cenários-chave da Fase 2a (concorrência e IO assíncrono):
+- **Execução automática**: `soma` e `fatorialV2` finalizam sem `exec`, registrando OUT 30 e 120.
+- **IO assíncrono**: `fibonacciREAD` bloqueia em IN, recebe entrada via `provideInput` e termina.
+- **Page fault**: `fibonacci10` gera faults e o disco trata as requisições.
+- **Vitimação**: múltiplos processos grandes com poucos frames fazem páginas irem para o disco.
 
-### TesteMemoriaVirtual.java (NOVO!)
-Teste completo para Memória Virtual com Disco:
-1. **Lazy Loading**: Verifica que apenas primeira página é carregada
-2. **Page Fault Automático**: Valida detecção e tratamento de page faults
-3. **Vitimação de Páginas**: Testa substituição quando memória cheia
-4. **Salvamento no Disco**: Verifica que páginas vitimadas são salvas
-5. **Carregamento do Disco**: Valida recarga de páginas previamente vitimadas
-6. **Bloqueio Durante IO**: Confirma que processo fica BLOCKED durante operações de disco
+Comando: `java -cp bin TesteSistema`  
+Resultado esperado: cada teste imprime “✓ Teste X finalizado” e resume os valores capturados.
+
+### TesteMemoriaVirtual.java
+Cobre os requisitos da Fase 2b (memória virtual + disco):
+- **Lazy loading**: apenas pg0 carregada ao criar `fibonacci10`.
+- **Page fault**: confirma operações do disco durante a execução.
+- **Vitimação**: `fibonacci10`, `PC` e `fatorialV2` salvam páginas no disco quando a RAM enche.
+
+Comando: `java -cp bin TesteMemoriaVirtual`  
+Resultado esperado: status “OK” para cada etapa e contador de páginas persistidas no disco.
 
 ## Arquitetura do Sistema
 

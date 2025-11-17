@@ -44,6 +44,7 @@ public class CPU implements Runnable {
 
     // Controle de thread
     private boolean active;
+    private final Object idleLock = new Object();
 
     // Referência ao PCB corrente (para exec debug e interrupções)
     private PCB currentPCB;
@@ -113,6 +114,7 @@ public class CPU implements Runnable {
     public synchronized void signalIOInterrupt(PCB process) {
         ioInterruptProcess = process;
         System.out.println("[CPU] Interrupção de IO sinalizada para processo " + process.pid);
+        wakeUp();
     }
 
     /**
@@ -121,6 +123,7 @@ public class CPU implements Runnable {
     public synchronized void signalDiskInterrupt(DiskDevice.DiskOperation operation) {
         diskInterruptOperation = operation;
         System.out.println("[CPU] Interrupção de DISCO sinalizada para processo " + operation.process.pid);
+        wakeUp();
     }
 
     public void saveContext(PCB pcb) {
@@ -540,13 +543,10 @@ public class CPU implements Runnable {
                 step();
             } else {
                 processAsyncInterrupts();
-                // Se não há processo rodando, aguarda um pouco
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+            if (!active) {
+                break;
+            }
+            waitForWork();
             }
         }
     }
@@ -554,6 +554,7 @@ public class CPU implements Runnable {
     public void stopCPU() {
         active = false;
         cpuStop = true;
+        wakeUp();
     }
 
     public int getMaxInt() {
@@ -600,6 +601,46 @@ public class CPU implements Runnable {
         }
         if (operation != null && so != null && so.ih != null) {
             so.ih.handleDisk(operation);
+        }
+    }
+
+    private boolean hasRunnableProcess() {
+        if (so == null || so.scheduler == null) {
+            return false;
+        }
+        PCB runningNow = so.scheduler.getRunning();
+        return runningNow != null && runningNow.state == PCB.ProcState.RUNNING;
+    }
+
+    private boolean hasPendingInterrupts() {
+        return ioInterruptProcess != null || diskInterruptOperation != null;
+    }
+
+    private void waitForWork() {
+        while (active) {
+            if (hasPendingInterrupts()) {
+                return;
+            }
+            if (hasRunnableProcess()) {
+                return;
+            }
+            synchronized (idleLock) {
+                if (!active || hasPendingInterrupts()) {
+                    return;
+                }
+                try {
+                    idleLock.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
+
+    public void wakeUp() {
+        synchronized (idleLock) {
+            idleLock.notifyAll();
         }
     }
 }

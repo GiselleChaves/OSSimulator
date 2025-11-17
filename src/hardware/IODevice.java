@@ -28,33 +28,27 @@ public class IODevice implements Runnable {
         public final int address; // Endereço lógico para leitura/escrita
         private final int immediateValue;
         private final boolean immediate;
-        private final boolean autoOut;
         private final ArrayBlockingQueue<Integer> pendingInput;
 
-        private IORequest(IOType type, PCB process, int address, int value, boolean needsInput, boolean immediate, boolean autoOut) {
+        private IORequest(IOType type, PCB process, int address, int value, boolean needsInput, boolean immediate) {
             this.type = type;
             this.process = process;
             this.address = address;
             this.immediateValue = value;
             this.immediate = immediate;
-            this.autoOut = autoOut;
             this.pendingInput = needsInput ? new ArrayBlockingQueue<>(1) : null;
         }
 
         public static IORequest read(PCB process, int address) {
-            return new IORequest(IOType.READ, process, address, 0, true, false, false);
+            return new IORequest(IOType.READ, process, address, 0, true, false);
         }
 
         public static IORequest write(PCB process, int address) {
-            return new IORequest(IOType.WRITE, process, address, 0, false, false, false);
+            return new IORequest(IOType.WRITE, process, address, 0, false, false);
         }
 
         public static IORequest writeImmediate(PCB process, int value) {
-            return new IORequest(IOType.WRITE, process, -1, value, false, true, false);
-        }
-
-        public static IORequest autoOut(PCB process, int value) {
-            return new IORequest(IOType.WRITE, process, -1, value, false, true, true);
+            return new IORequest(IOType.WRITE, process, -1, value, false, true);
         }
 
         public boolean needsInput() {
@@ -79,10 +73,6 @@ public class IODevice implements Runnable {
 
         public int getImmediateValue() {
             return immediateValue;
-        }
-
-        public boolean isAutoOut() {
-            return autoOut;
         }
     }
     
@@ -109,9 +99,7 @@ public class IODevice implements Runnable {
         try {
             requestQueue.put(request);
             if (request.isImmediate()) {
-                String label = request.isAutoOut() ? "[AUTO-OUT]" : "[IO]";
-                System.out.println(String.format("%s enqueue pid=%d (%s) value=%d",
-                        label,
+                System.out.println(String.format("[IO] enqueue pid=%d (%s) value=%d",
                         request.process.pid,
                         request.process.nome,
                         request.getImmediateValue()));
@@ -201,9 +189,8 @@ public class IODevice implements Runnable {
 
         if (request.isImmediate()) {
             int value = request.getImmediateValue();
-            String prefix = request.isAutoOut() ? "[AUTO-OUT]" : "[IO]";
-            System.out.println(String.format("%s complete pid=%d (%s) value=%d",
-                    prefix,
+            so.recordProcessOutput(request.process.pid, value);
+            System.out.println(String.format("[IO] complete WRITE pid=%d (%s) value=%d",
                     request.process.pid,
                     request.process.nome,
                     value));
@@ -213,6 +200,7 @@ public class IODevice implements Runnable {
                 try {
                     int physicalAddr = so.traduzEndereco(request.process, request.address, false);
                     Word dataWord = so.hw.mem.read(physicalAddr);
+                    so.recordProcessOutput(request.process.pid, dataWord.p);
                     System.out.println(String.format("[IO] complete WRITE pid=%d (%s) value=%d addr=%d",
                             request.process.pid,
                             request.process.nome,
